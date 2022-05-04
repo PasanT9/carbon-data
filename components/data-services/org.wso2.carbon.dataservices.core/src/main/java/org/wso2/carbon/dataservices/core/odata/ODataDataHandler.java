@@ -39,6 +39,11 @@ public interface ODataDataHandler {
      */
     List<ODataEntry> readTable(String tableName) throws ODataServiceFault;
 
+
+    List<ODataEntry> readTableStreaming(String tableName) throws ODataServiceFault;
+
+    void initReadTableStreaming();
+
     /**
      * This method read the table with Keys and return.
      * Return a list of DataEntry object which has been wrapped the entity.

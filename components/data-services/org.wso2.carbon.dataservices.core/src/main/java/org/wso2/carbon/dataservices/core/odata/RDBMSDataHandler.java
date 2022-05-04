@@ -77,6 +77,10 @@ public class RDBMSDataHandler implements ODataDataHandler {
      */
     private final String configID;
 
+    private final int EntityCount = 1000;
+
+    private int currentEntity;
+
     /**
      * RDBMS datasource.
      */
@@ -384,6 +388,30 @@ public class RDBMSDataHandler implements ODataDataHandler {
         } catch (SQLException e) {
             throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
                                            e.getMessage());
+        } finally {
+            releaseResources(resultSet, statement);
+            releaseConnection(connection);
+        }
+    }
+
+    public void initReadTableStreaming() {
+        this.currentEntity = 0;
+    }
+
+    public List<ODataEntry> readTableStreaming(String tableName) throws ODataServiceFault {
+        ResultSet resultSet = null;
+        Connection connection = null;
+        PreparedStatement statement = null;
+        try {
+            connection = initializeConnection();
+            String query = "select * from " + tableName + " LIMIT " + this.currentEntity+","+this.EntityCount;
+            statement = connection.prepareStatement(query);
+            resultSet = statement.executeQuery();
+            this.currentEntity += this.EntityCount;
+            return createDataEntryCollectionFromRS(tableName, resultSet);
+        } catch (SQLException e) {
+            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
+                    e.getMessage());
         } finally {
             releaseResources(resultSet, statement);
             releaseConnection(connection);

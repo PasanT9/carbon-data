@@ -126,6 +126,14 @@ public class CassandraDataHandler implements ODataDataHandler {
         return entryList;
     }
 
+    public List<ODataEntry> readTableStreaming(String tableName) throws ODataServiceFault {
+        return null;
+    }
+
+    public void initReadTableStreaming() {
+
+    }
+
     @Override
     public List<ODataEntry> readTableWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
         List<ColumnMetadata> cassandraTableMetaData = this.session.getCluster().getMetadata().getKeyspace(this.keyspace)
