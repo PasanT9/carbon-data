@@ -1,18 +1,18 @@
 package org.wso2.carbon.dataservices.core.odata;
 
-import org.apache.olingo.commons.api.data.EntityCollection;
-import org.apache.olingo.commons.api.data.EntityIterator;
 import org.apache.olingo.commons.api.data.Entity;
+import org.apache.olingo.commons.api.data.EntityIterator;
+import org.apache.olingo.commons.api.edm.EdmEntitySet;
+import org.apache.olingo.server.api.uri.queryoption.ExpandOption;
 
-import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
 
-public class MyEntityIterator extends EntityIterator {
+public class MyEntityIterator2 extends EntityIterator {
 
     private ODataAdapter adapter;
-    private String tableName;
+    private EdmEntitySet edmEntitySet;
     private String baseURL;
 
     private List<ODataEntry> entries;
@@ -21,12 +21,15 @@ public class MyEntityIterator extends EntityIterator {
 
     private List<Entity> entityList;
 
-    public MyEntityIterator(ODataAdapter adapter, String tableName, String baseURL, Iterator<Entity> iterator, List<Entity> entityList) {
+    private ExpandOption expandOption;
+
+    public MyEntityIterator2(ODataAdapter adapter, EdmEntitySet edmEntitySet, String baseURL, Iterator<Entity> iterator, List<Entity> entityList, ExpandOption expandOption) {
         this.adapter = adapter;
-        this.tableName = tableName;
+        this.edmEntitySet = edmEntitySet;
         this.baseURL = baseURL;
         this.iterator = iterator;
         this.entityList = entityList;
+        this.expandOption = expandOption;
     }
 
     @Override
@@ -51,12 +54,12 @@ public class MyEntityIterator extends EntityIterator {
         this.adapter = adapter;
     }
 
-    public String getTableName() {
-        return tableName;
+    public EdmEntitySet getEdmEntitySet() {
+        return edmEntitySet;
     }
 
-    public void setTableName(String tableName) {
-        this.tableName = tableName;
+    public void setEdmEntitySet(EdmEntitySet edmEntitySet) {
+        this.edmEntitySet = edmEntitySet;
     }
 
     public String getBaseURL() {
@@ -81,5 +84,13 @@ public class MyEntityIterator extends EntityIterator {
 
     public void setEntityList(List<Entity> entityList) {
         this.entityList = entityList;
+    }
+
+    public ExpandOption getExpandOption() {
+        return expandOption;
+    }
+
+    public void setExpandOption(ExpandOption expandOption) {
+        this.expandOption = expandOption;
     }
 }

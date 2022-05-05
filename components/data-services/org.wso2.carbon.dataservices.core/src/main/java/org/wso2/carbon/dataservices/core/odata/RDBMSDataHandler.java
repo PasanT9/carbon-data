@@ -77,7 +77,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
      */
     private final String configID;
 
-    private final int EntityCount = 1000;
+    private final int EntityCount = 5;
 
     private int currentEntity;
 
