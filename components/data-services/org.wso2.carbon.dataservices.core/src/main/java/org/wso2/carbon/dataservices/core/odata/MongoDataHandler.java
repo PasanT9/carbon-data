@@ -180,6 +180,10 @@ public class MongoDataHandler implements ODataDataHandler {
         return null;
     }
 
+    public List<ODataEntry> readTableWithKeysStreaming(String tableName, ODataEntry keys) throws ODataServiceFault {
+        return null;
+    }
+
     public void initReadTableStreaming() {
 
     }

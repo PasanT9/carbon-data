@@ -42,6 +42,8 @@ public interface ODataDataHandler {
 
     List<ODataEntry> readTableStreaming(String tableName) throws ODataServiceFault;
 
+    List<ODataEntry> readTableWithKeysStreaming(String tableName, ODataEntry keys)  throws ODataServiceFault ;
+
     void initReadTableStreaming();
 
     /**

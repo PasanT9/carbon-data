@@ -77,7 +77,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
      */
     private final String configID;
 
-    private final int EntityCount = 5;
+    private final int EntityCount = 3;
 
     private int currentEntity;
 
@@ -404,7 +404,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
         PreparedStatement statement = null;
         try {
             connection = initializeConnection();
-            String query = "select * from " + tableName + " LIMIT " + this.currentEntity+","+this.EntityCount;
+            String query = "select * from " + tableName + " limit " + this.currentEntity+","+this.EntityCount;
             statement = connection.prepareStatement(query);
             resultSet = statement.executeQuery();
             this.currentEntity += this.EntityCount;
@@ -529,6 +529,35 @@ public class RDBMSDataHandler implements ODataDataHandler {
         } catch (SQLException | ParseException e) {
             throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
                                            e.getMessage());
+        } finally {
+            releaseResources(resultSet, statement);
+            releaseConnection(connection);
+        }
+    }
+
+    public List<ODataEntry> readTableWithKeysStreaming(String tableName, ODataEntry keys) throws ODataServiceFault {
+        ResultSet resultSet = null;
+        Connection connection = null;
+        PreparedStatement statement = null;
+        try {
+            connection = initializeConnection();
+            String query = createReadSqlWithKeys(tableName, keys) + " limit " + this.currentEntity+","+this.EntityCount;
+            statement = connection.prepareStatement(query);
+            int index = 1;
+            for (String column : keys.getNames()) {
+                if (this.rdbmsDataTypes.get(tableName).keySet().contains(column)) {
+                    String value = keys.getValue(column);
+                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index,
+                            statement);
+                    index++;
+                }
+            }
+            resultSet = statement.executeQuery();
+            this.currentEntity += this.EntityCount;
+            return createDataEntryCollectionFromRS(tableName, resultSet);
+        } catch (SQLException | ParseException e) {
+            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
+                    e.getMessage());
         } finally {
             releaseResources(resultSet, statement);
             releaseConnection(connection);
