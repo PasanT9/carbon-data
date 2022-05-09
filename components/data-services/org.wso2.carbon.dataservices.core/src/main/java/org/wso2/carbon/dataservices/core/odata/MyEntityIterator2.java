@@ -4,6 +4,7 @@ import org.apache.olingo.commons.api.data.Entity;
 import org.apache.olingo.commons.api.data.EntityIterator;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.server.api.uri.queryoption.ExpandOption;
+import org.apache.olingo.server.api.uri.queryoption.FilterOption;
 
 import java.util.Iterator;
 import java.util.List;
@@ -23,13 +24,30 @@ public class MyEntityIterator2 extends EntityIterator {
 
     private ExpandOption expandOption;
 
-    public MyEntityIterator2(ODataAdapter adapter, EdmEntitySet edmEntitySet, String baseURL, Iterator<Entity> iterator, List<Entity> entityList, ExpandOption expandOption) {
+    private FilterOption filterOption;
+
+    public int count;
+
+    public int rowCount;
+
+    public MyEntityIterator2(ODataAdapter adapter, EdmEntitySet edmEntitySet, String baseURL, Iterator<Entity> iterator, List<Entity> entityList, ExpandOption expandOption, FilterOption filterOption, int rowCount) {
         this.adapter = adapter;
         this.edmEntitySet = edmEntitySet;
         this.baseURL = baseURL;
         this.iterator = iterator;
         this.entityList = entityList;
         this.expandOption = expandOption;
+        this.filterOption = filterOption;
+        this.rowCount = rowCount;
+        this.count = 0;
+    }
+
+    public FilterOption getFilterOption() {
+        return filterOption;
+    }
+
+    public void setFilterOption(FilterOption filterOption) {
+        this.filterOption = filterOption;
     }
 
     @Override

@@ -130,6 +130,10 @@ public class CassandraDataHandler implements ODataDataHandler {
         return null;
     }
 
+    public int countRows(String tableName) throws ODataServiceFault {
+        return -1;
+    }
+
     public List<ODataEntry> readTableWithKeysStreaming(String tableName, ODataEntry keys) throws ODataServiceFault {
         return null;
     }

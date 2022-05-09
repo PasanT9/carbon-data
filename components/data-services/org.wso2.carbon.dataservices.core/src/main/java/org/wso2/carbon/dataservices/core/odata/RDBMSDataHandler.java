@@ -398,6 +398,28 @@ public class RDBMSDataHandler implements ODataDataHandler {
         this.currentEntity = 0;
     }
 
+    public int countRows(String tableName) throws ODataServiceFault {
+        ResultSet resultSet = null;
+        Connection connection = null;
+        PreparedStatement statement = null;
+        try {
+            connection = initializeConnection();
+            String query = "select count(*) as rowcount from " + tableName;
+            statement = connection.prepareStatement(query);
+            resultSet = statement.executeQuery();
+            resultSet.next();
+            int count = resultSet.getInt("rowcount");
+
+            return count;
+        } catch (SQLException e) {
+            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
+                    e.getMessage());
+        } finally {
+            releaseResources(resultSet, statement);
+            releaseConnection(connection);
+        }
+    }
+
     public List<ODataEntry> readTableStreaming(String tableName) throws ODataServiceFault {
         ResultSet resultSet = null;
         Connection connection = null;

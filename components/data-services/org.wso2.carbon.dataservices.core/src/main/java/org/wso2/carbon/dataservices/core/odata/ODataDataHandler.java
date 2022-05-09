@@ -172,4 +172,6 @@ public interface ODataDataHandler {
      */
     void deleteReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable,
                          ODataEntry navigationTableKeys) throws ODataServiceFault;
+
+    int countRows(String tableName) throws ODataServiceFault;
 }

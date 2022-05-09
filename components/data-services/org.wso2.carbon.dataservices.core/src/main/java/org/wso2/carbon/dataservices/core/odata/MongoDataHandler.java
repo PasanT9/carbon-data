@@ -188,6 +188,10 @@ public class MongoDataHandler implements ODataDataHandler {
 
     }
 
+    public int countRows(String tableName) throws ODataServiceFault {
+        return -1;
+    }
+
     /**
      * This method reads the collection data for a given key(i.e. _id).
      * Returns a list of DataEntry object which has been wrapped the entity.
