@@ -3,8 +3,7 @@ package org.wso2.carbon.dataservices.core.odata;
 import org.apache.olingo.commons.api.data.Entity;
 import org.apache.olingo.commons.api.data.EntityIterator;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
-import org.apache.olingo.server.api.uri.queryoption.ExpandOption;
-import org.apache.olingo.server.api.uri.queryoption.FilterOption;
+import org.apache.olingo.server.api.uri.queryoption.*;
 
 import java.util.Iterator;
 import java.util.List;
@@ -26,11 +25,21 @@ public class MyEntityIterator2 extends EntityIterator {
 
     private FilterOption filterOption;
 
-    public int count;
+    private CountOption countOption;
+
+    private SkipOption skipOption;
+
+    private TopOption topOption;
+
+    public int currentCount;
 
     public int rowCount;
 
-    public MyEntityIterator2(ODataAdapter adapter, EdmEntitySet edmEntitySet, String baseURL, Iterator<Entity> iterator, List<Entity> entityList, ExpandOption expandOption, FilterOption filterOption, int rowCount) {
+    public int skipCount;
+
+    public int topCount;
+
+    public MyEntityIterator2(ODataAdapter adapter, EdmEntitySet edmEntitySet, String baseURL, Iterator<Entity> iterator, List<Entity> entityList, ExpandOption expandOption, FilterOption filterOption, CountOption countOption, SkipOption skipOption,TopOption topOption,int rowCount) {
         this.adapter = adapter;
         this.edmEntitySet = edmEntitySet;
         this.baseURL = baseURL;
@@ -38,8 +47,30 @@ public class MyEntityIterator2 extends EntityIterator {
         this.entityList = entityList;
         this.expandOption = expandOption;
         this.filterOption = filterOption;
+        this.countOption = countOption;
+        this.skipOption = skipOption;
+        this.topOption = topOption;
         this.rowCount = rowCount;
-        this.count = 0;
+        this.skipCount = 0;
+        this.currentCount = 0;
+        this.topCount = 0;
+
+    }
+
+    public TopOption getTopOption() {
+        return topOption;
+    }
+
+    public void setTopOption(TopOption topOption) {
+        this.topOption = topOption;
+    }
+
+    public SkipOption getSkipOption() {
+        return skipOption;
+    }
+
+    public void setSkipOption(SkipOption skipOption) {
+        this.skipOption = skipOption;
     }
 
     public FilterOption getFilterOption() {
