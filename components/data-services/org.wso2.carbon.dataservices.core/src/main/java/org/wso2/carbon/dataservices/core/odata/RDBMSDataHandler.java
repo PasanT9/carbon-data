@@ -22,11 +22,17 @@ import org.apache.axis2.databinding.utils.ConverterUtil;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.olingo.server.api.ODataApplicationException;
+import org.apache.olingo.server.api.uri.queryoption.OrderByItem;
+import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
+import org.apache.olingo.server.api.uri.queryoption.expression.ExpressionVisitException;
 import org.wso2.carbon.dataservices.common.DBConstants;
 import org.wso2.carbon.dataservices.core.DBUtils;
 import org.wso2.carbon.dataservices.core.DataServiceFault;
 import org.wso2.carbon.dataservices.core.engine.DataEntry;
 import org.wso2.carbon.dataservices.core.odata.DataColumn.ODataDataType;
+import org.wso2.carbon.dataservices.core.odata.expression.ExpressionVisitorImpl;
+import org.wso2.carbon.dataservices.core.odata.expression.operand.TypedOperand;
 
 import javax.sql.DataSource;
 import java.io.BufferedReader;
@@ -438,6 +444,51 @@ public class RDBMSDataHandler implements ODataDataHandler {
             releaseResources(resultSet, statement);
             releaseConnection(connection);
         }
+    }
+
+    public List<ODataEntry> readTableStreamingOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault {
+        ResultSet resultSet = null;
+        Connection connection = null;
+        PreparedStatement statement = null;
+        try {
+            connection = initializeConnection();
+            String orderBy = getOrderByStatement(orderByOption);
+            String query = "select * from " + tableName + " " + orderBy + " limit "  + this.currentEntity+","+this.EntityCount;
+            statement = connection.prepareStatement(query);
+            resultSet = statement.executeQuery();
+            this.currentEntity += this.EntityCount;
+            return createDataEntryCollectionFromRS(tableName, resultSet);
+        } catch (SQLException e) {
+            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
+                    e.getMessage());
+        } finally {
+            releaseResources(resultSet, statement);
+            releaseConnection(connection);
+        }
+    }
+
+    private String getOrderByStatement(OrderByOption orderByOption) {
+        String orderBy = "order by ";
+        try {
+            for (int i = 0; i < orderByOption.getOrders().size(); i++) {
+                if(i != 0) {
+                    orderBy += ", ";
+                }
+                final OrderByItem item = orderByOption.getOrders().get(i);
+                orderBy += item.getExpression();
+                if(item.isDescending()) {
+                    orderBy += " desc";
+                }
+                else {
+                    orderBy += " asc";
+                }
+            }
+        }
+        catch(Exception e) {
+            e.printStackTrace();
+        }
+        orderBy = orderBy.replaceAll("[\\[\\]]","");
+        return orderBy;
     }
 
     @Override

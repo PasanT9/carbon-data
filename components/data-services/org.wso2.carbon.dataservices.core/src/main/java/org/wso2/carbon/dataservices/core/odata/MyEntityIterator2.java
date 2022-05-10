@@ -31,6 +31,8 @@ public class MyEntityIterator2 extends EntityIterator {
 
     private TopOption topOption;
 
+    private OrderByOption orderByOption;
+
     public int currentCount;
 
     public int rowCount;
@@ -39,7 +41,7 @@ public class MyEntityIterator2 extends EntityIterator {
 
     public int topCount;
 
-    public MyEntityIterator2(ODataAdapter adapter, EdmEntitySet edmEntitySet, String baseURL, Iterator<Entity> iterator, List<Entity> entityList, ExpandOption expandOption, FilterOption filterOption, CountOption countOption, SkipOption skipOption,TopOption topOption,int rowCount) {
+    public MyEntityIterator2(ODataAdapter adapter, EdmEntitySet edmEntitySet, String baseURL, Iterator<Entity> iterator, List<Entity> entityList, ExpandOption expandOption, FilterOption filterOption, CountOption countOption, SkipOption skipOption,TopOption topOption, OrderByOption orderByOption, int rowCount) {
         this.adapter = adapter;
         this.edmEntitySet = edmEntitySet;
         this.baseURL = baseURL;
@@ -51,10 +53,19 @@ public class MyEntityIterator2 extends EntityIterator {
         this.skipOption = skipOption;
         this.topOption = topOption;
         this.rowCount = rowCount;
+        this.orderByOption = orderByOption;
         this.skipCount = 0;
         this.currentCount = 0;
         this.topCount = 0;
 
+    }
+
+    public OrderByOption getOrderByOption() {
+        return orderByOption;
+    }
+
+    public void setOrderByOption(OrderByOption orderByOption) {
+        this.orderByOption = orderByOption;
     }
 
     public TopOption getTopOption() {

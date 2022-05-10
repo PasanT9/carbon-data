@@ -18,6 +18,7 @@
 
 package org.wso2.carbon.dataservices.core.odata;
 
+import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
 import org.wso2.carbon.dataservices.core.engine.DataEntry;
 
 import java.util.List;
@@ -43,6 +44,8 @@ public interface ODataDataHandler {
     List<ODataEntry> readTableStreaming(String tableName) throws ODataServiceFault;
 
     List<ODataEntry> readTableWithKeysStreaming(String tableName, ODataEntry keys)  throws ODataServiceFault ;
+
+    List<ODataEntry> readTableStreamingOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault;
 
     void initReadTableStreaming();
 

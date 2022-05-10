@@ -28,6 +28,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.jongo.Jongo;
@@ -190,6 +191,10 @@ public class MongoDataHandler implements ODataDataHandler {
 
     public int countRows(String tableName) throws ODataServiceFault {
         return -1;
+    }
+
+    public List<ODataEntry> readTableStreamingOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault {
+        return null;
     }
 
     /**
