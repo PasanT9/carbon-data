@@ -40,6 +40,7 @@ import org.apache.olingo.commons.api.edm.EdmType;
 import org.apache.olingo.commons.api.edm.FullQualifiedName;
 import org.apache.olingo.commons.api.edm.constants.EdmTypeKind;
 import org.apache.olingo.commons.api.edm.provider.CsdlEdmProvider;
+import org.apache.olingo.commons.api.edm.provider.CsdlEntityType;
 import org.apache.olingo.commons.api.edm.provider.CsdlProperty;
 import org.apache.olingo.commons.api.edm.provider.CsdlPropertyRef;
 import org.apache.olingo.commons.api.edmx.EdmxReference;
@@ -125,6 +126,8 @@ public class ODataAdapter implements ServiceHandler {
 
     private static final String EMPTY_E_TAG = "*";
 
+    private static final int MAX_PAGE_SIZE = 10;
+
     private static final String ODATA_MAX_PAGE_SIZE = "odata.maxpagesize";
 
     /**
@@ -153,6 +156,8 @@ public class ODataAdapter implements ServiceHandler {
         }
     };
 
+
+
     public ODataAdapter(ODataDataHandler dataHandler, String namespace, String configID) throws ODataServiceFault {
         this.dataHandler = dataHandler;
         this.namespace = namespace;
@@ -168,6 +173,15 @@ public class ODataAdapter implements ServiceHandler {
     public void readMetadata(MetadataRequest request, MetadataResponse response)
             throws ODataApplicationException, ODataLibraryException {
         response.writeMetadata();
+    }
+
+    private static int getPageSize(final DataRequest request) {
+
+        Integer preferredSize = request.getOdata().createPreferences(request.getODataRequest()
+                .getHeaders(HttpHeader.PREFER)).getMaxPageSize();
+
+        return preferredSize == null ? MAX_PAGE_SIZE : preferredSize;
+
     }
 
     @Override
@@ -215,6 +229,8 @@ public class ODataAdapter implements ServiceHandler {
         TopOption topOption = uriInfo.getTopOption();
         SkipTokenOption skipTokenOption = uriInfo.getSkipTokenOption();
 
+        int pageSize = this.getPageSize(request);
+
         try {
             if (request.isSingleton()) {
                 log.error(new ODataServiceFault("Singletons are not supported."));
@@ -232,7 +248,7 @@ public class ODataAdapter implements ServiceHandler {
                     }
                 } else {
                     //entitySet = getEntityCollection(edmEntitySet.getName(), baseURL);
-                    iterator = getEntityIterator(edmEntitySet, baseURL, expandOption, filterOption, countOption, skipOption, topOption, orderByOption);
+                    iterator = getEntityIterator(edmEntitySet, baseURL, expandOption, filterOption, countOption, skipOption, topOption, orderByOption, skipTokenOption, pageSize);
                     //iterator = getEntityIterator(edmEntitySet.getName(), baseURL, null);
                 }
             }
@@ -279,12 +295,10 @@ public class ODataAdapter implements ServiceHandler {
 //            if (topOption != null) {
 //                QueryHandler.applyTopSystemQueryOption(topOption, details.entitySet);
 //            }
-            if (skipTokenOption != null) {
-                int pageSize = request.getOdata().createPreferences(request.getODataRequest()
-                                .getHeaders(HttpHeader.PREFER))
-                        .getMaxPageSize();
-                QueryHandler.applyServerSidePaging(skipTokenOption, details.entitySet, edmEntitySet, baseURL, pageSize);
-            }
+//            if (skipTokenOption != null) {
+//                int pageSize = 10;
+//                QueryHandler.applyServerSidePaging(skipTokenOption, details.entitySet, edmEntitySet, baseURL, pageSize);
+//            }
             return details;
         } catch (ODataServiceFault dataServiceFault) {
             log.error("Error in processing the read request. : " + dataServiceFault.getMessage(), dataServiceFault);
@@ -1260,7 +1274,7 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     public EntityIterator createEntityIteratorFromDataEntryListWithExpandOption(EdmEntitySet edmEntitySet,
-                                                                String baseURL, ExpandOption expandOption, FilterOption filterOption, CountOption countOption, SkipOption skipOption, TopOption topOption, OrderByOption orderByOption) throws ODataApplicationException {
+                                                                String baseURL, ExpandOption expandOption, FilterOption filterOption, CountOption countOption, SkipOption skipOption, TopOption topOption, OrderByOption orderByOption, SkipTokenOption skipTokenOption, int pageSize) throws ODataApplicationException {
         try {
 
             //EntityCollection entitySet = new EntityCollection();
@@ -1270,7 +1284,22 @@ public class ODataAdapter implements ServiceHandler {
             Iterator<Entity> it = entityList.iterator();
             int rowCount = this.dataHandler.countRows(edmEntitySet.getName());
 
-            return new MyEntityIterator2(this, edmEntitySet, baseURL, it, entityList, expandOption, filterOption, countOption, skipOption, topOption, orderByOption, rowCount) {
+            int itemsToSkip = -1;
+            URI nextLinkUri = null;
+
+            if(skipTokenOption != null) {
+                int page = Integer.parseInt(skipTokenOption.getValue());
+                itemsToSkip = page * pageSize;
+
+                int nextPage = page + 1;
+                String nextLink = baseURL + "/" + edmEntitySet.getName() + "?$skiptoken=" + nextPage;
+                nextLinkUri = new URI(nextLink);
+            }
+
+
+            //this.setNext(new URI(nextLink));
+
+            return new MyEntityIterator2(this, edmEntitySet, baseURL, it, entityList, expandOption, filterOption, countOption, skipOption, topOption, orderByOption, skipTokenOption, rowCount, itemsToSkip, pageSize, nextLinkUri) {
 
                 @Override
                 public boolean hasNext() {
@@ -1339,6 +1368,22 @@ public class ODataAdapter implements ServiceHandler {
                                     }
                                 }
 
+                                if(this.getSkipTokenOption() != null && addEntity) {
+                                    this.skipTokenCount++;
+                                    try {
+                                        if(this.skipTokenCount <= this.getItemsToSkip()) {
+                                            addEntity = false;
+                                        }
+                                        else if (this.skipTokenCount > (this.getItemsToSkip() + this.getPageSize())) {
+                                            this.iterator = this.getEntityList().iterator();
+                                            return this.iterator.hasNext();
+                                        }
+                                    }
+                                    catch(Exception e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+
                                 this.currentCount++;
 
                                 if(addEntity) {
@@ -1401,15 +1446,20 @@ public class ODataAdapter implements ServiceHandler {
                                     }
                                 }
                             }
-
-                            if(this.getFilterOption() != null && (this.currentCount < this.rowCount) && (this.getEntityList().isEmpty())){
-                                return hasNext();
-                            }
-                            if(this.getSkipOption() != null && (this.skipCount <= this.getSkipOption().getValue()) && (this.getEntityList().isEmpty())){
-                                return hasNext();
+                            if((this.currentCount < this.rowCount) || (!this.getEntityList().isEmpty())) {
+                                if(this.getFilterOption() != null && (this.currentCount < this.rowCount) && (this.getEntityList().isEmpty())){
+                                    return hasNext();
+                                }
+                                if(this.getSkipOption() != null && (this.skipCount <= this.getSkipOption().getValue()) && (this.getEntityList().isEmpty())){
+                                    return hasNext();
+                                }
+                                if(this.getSkipTokenOption() != null && (this.skipTokenCount <= this.getItemsToSkip()) && this.getEntityList().isEmpty()) {
+                                    return hasNext();
+                                }
                             }
                             this.iterator = this.getEntityList().iterator();
                             return this.iterator.hasNext();
+
                         }
                         catch (Exception e) {
                             e.printStackTrace();
@@ -1664,10 +1714,10 @@ public class ODataAdapter implements ServiceHandler {
         return createEntityCollectionFromDataEntryList(tableName, this.dataHandler.readTable(tableName), baseUrl);
     }
 
-    private EntityIterator getEntityIterator(EdmEntitySet edmEntitySet, String baseUrl, ExpandOption expandOption, FilterOption filterOption, CountOption countOption, SkipOption skipOption, TopOption topOption, OrderByOption orderByOption) throws ODataServiceFault {
+    private EntityIterator getEntityIterator(EdmEntitySet edmEntitySet, String baseUrl, ExpandOption expandOption, FilterOption filterOption, CountOption countOption, SkipOption skipOption, TopOption topOption, OrderByOption orderByOption, SkipTokenOption skipTokenOption, int pageSize) throws ODataServiceFault {
         try {
 //            if(expandOption != null ){
-                return createEntityIteratorFromDataEntryListWithExpandOption(edmEntitySet, baseUrl, expandOption, filterOption, countOption, skipOption, topOption, orderByOption);
+                return createEntityIteratorFromDataEntryListWithExpandOption(edmEntitySet, baseUrl, expandOption, filterOption, countOption, skipOption, topOption, orderByOption, skipTokenOption, pageSize);
 //            }
 //            else {
 //                return createEntityIteratorFromDataEntryList(edmEntitySet.getName(), baseUrl);

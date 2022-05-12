@@ -5,6 +5,7 @@ import org.apache.olingo.commons.api.data.EntityIterator;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.server.api.uri.queryoption.*;
 
+import java.net.URI;
 import java.util.Iterator;
 import java.util.List;
 
@@ -33,6 +34,8 @@ public class MyEntityIterator2 extends EntityIterator {
 
     private OrderByOption orderByOption;
 
+    private SkipTokenOption skipTokenOption;
+
     public int currentCount;
 
     public int rowCount;
@@ -41,7 +44,13 @@ public class MyEntityIterator2 extends EntityIterator {
 
     public int topCount;
 
-    public MyEntityIterator2(ODataAdapter adapter, EdmEntitySet edmEntitySet, String baseURL, Iterator<Entity> iterator, List<Entity> entityList, ExpandOption expandOption, FilterOption filterOption, CountOption countOption, SkipOption skipOption,TopOption topOption, OrderByOption orderByOption, int rowCount) {
+    public int skipTokenCount;
+
+    private int itemsToSkip;
+
+    private int pageSize;
+
+    public MyEntityIterator2(ODataAdapter adapter, EdmEntitySet edmEntitySet, String baseURL, Iterator<Entity> iterator, List<Entity> entityList, ExpandOption expandOption, FilterOption filterOption, CountOption countOption, SkipOption skipOption,TopOption topOption, OrderByOption orderByOption, SkipTokenOption skipTokenOption,int rowCount, int itemsToSkip, int pageSize, URI nextLinkUri) {
         this.adapter = adapter;
         this.edmEntitySet = edmEntitySet;
         this.baseURL = baseURL;
@@ -54,10 +63,41 @@ public class MyEntityIterator2 extends EntityIterator {
         this.topOption = topOption;
         this.rowCount = rowCount;
         this.orderByOption = orderByOption;
+        this.skipTokenOption = skipTokenOption;
         this.skipCount = 0;
         this.currentCount = 0;
         this.topCount = 0;
+        this.skipTokenCount = 0;
+        this.itemsToSkip = itemsToSkip;
+        this.pageSize = pageSize;
 
+        if(nextLinkUri != null) {
+            this.setNext(nextLinkUri);
+        }
+    }
+
+    public int getItemsToSkip() {
+        return itemsToSkip;
+    }
+
+    public void setItemsToSkip(int itemsToSkip) {
+        this.itemsToSkip = itemsToSkip;
+    }
+
+    public int getPageSize() {
+        return pageSize;
+    }
+
+    public void setPageSize(int pageSize) {
+        this.pageSize = pageSize;
+    }
+
+    public SkipTokenOption getSkipTokenOption() {
+        return skipTokenOption;
+    }
+
+    public void setSkipTokenOption(SkipTokenOption skipTokenOption) {
+        this.skipTokenOption = skipTokenOption;
     }
 
     public OrderByOption getOrderByOption() {
