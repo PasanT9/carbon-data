@@ -61,14 +61,7 @@ import org.apache.olingo.server.api.uri.UriResourceAction;
 import org.apache.olingo.server.api.uri.UriResourceEntitySet;
 import org.apache.olingo.server.api.uri.UriResourceFunction;
 import org.apache.olingo.server.api.uri.UriResourceNavigation;
-import org.apache.olingo.server.api.uri.queryoption.CountOption;
-import org.apache.olingo.server.api.uri.queryoption.ExpandItem;
-import org.apache.olingo.server.api.uri.queryoption.ExpandOption;
-import org.apache.olingo.server.api.uri.queryoption.FilterOption;
-import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
-import org.apache.olingo.server.api.uri.queryoption.SkipOption;
-import org.apache.olingo.server.api.uri.queryoption.SkipTokenOption;
-import org.apache.olingo.server.api.uri.queryoption.TopOption;
+import org.apache.olingo.server.api.uri.queryoption.*;
 import org.apache.olingo.server.core.ContentNegotiatorException;
 import org.apache.olingo.server.core.ServiceHandler;
 import org.apache.olingo.server.core.requests.ActionRequest;
@@ -207,6 +200,8 @@ public class ODataAdapter implements ServiceHandler {
         ExpandOption expandOption;
 
         CountOption countOption;
+
+        SelectOption selectOption;
     }
 
     /**
@@ -234,6 +229,7 @@ public class ODataAdapter implements ServiceHandler {
         SkipOption skipOption = uriInfo.getSkipOption();
         TopOption topOption = uriInfo.getTopOption();
         SkipTokenOption skipTokenOption = uriInfo.getSkipTokenOption();
+        SelectOption selectOption = uriInfo.getSelectOption();
 
         int pageSize = this.getPageSize(request);
 
@@ -280,7 +276,7 @@ public class ODataAdapter implements ServiceHandler {
             details.edmEntitySet = edmEntitySet;
             details.expandOption = expandOption;
             details.countOption = countOption;
-
+            details.selectOption = selectOption;
             details.entity = entity;
             details.entitySet = entitySet;
             details.entityType = entityType;
@@ -453,7 +449,20 @@ public class ODataAdapter implements ServiceHandler {
                     ServiceMetadata edm = odata.createServiceMetadata(getEdmProvider(), new ArrayList<EdmxReference>());
 
                     final String id = request.getODataRequest().getRawBaseUri() + "/" + details.edmEntitySet.getName();
-                    ContextURL contextUrl = ContextURL.with().entitySet(details.edmEntitySet).build();
+
+                    ContextURL contextUrl = null;
+
+                    if(details.selectOption != null) {
+                        String selectList = odata.createUriHelper().buildContextURLSelectList(details.entityType,
+                                null, details.selectOption);
+
+                        contextUrl = ContextURL.with()
+                                .entitySet(details.edmEntitySet)
+                                .selectList(selectList)
+                                .build();
+                    } else {
+                        contextUrl = ContextURL.with().entitySet(details.edmEntitySet).build();
+                    }
 
                     EntityCollectionSerializerOptions opts = null;
 
@@ -476,7 +485,7 @@ public class ODataAdapter implements ServiceHandler {
 //                    if(details.expandOption != null ) {
                         opts = EntityCollectionSerializerOptions.with().id(id)
                                 .writeContentErrorCallback(errorCallback)
-                                .contextURL(contextUrl).expand(details.expandOption).count(details.countOption).build();
+                                .contextURL(contextUrl).expand(details.expandOption).count(details.countOption).select(details.selectOption).build();
 //                    }
 //                    if(details.countOption != null) {
 //                        opts = EntityCollectionSerializerOptions.with().id(id)
