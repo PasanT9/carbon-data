@@ -18,6 +18,8 @@
 
 package org.wso2.carbon.dataservices.core.odata;
 
+import org.apache.olingo.server.api.serializer.ODataSerializer;
+//import org.wso2.carbon.dataservices.core.odata.serializer.MyOData;
 import org.apache.axis2.databinding.utils.ConverterUtil;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
@@ -40,7 +42,6 @@ import org.apache.olingo.commons.api.edm.EdmType;
 import org.apache.olingo.commons.api.edm.FullQualifiedName;
 import org.apache.olingo.commons.api.edm.constants.EdmTypeKind;
 import org.apache.olingo.commons.api.edm.provider.CsdlEdmProvider;
-import org.apache.olingo.commons.api.edm.provider.CsdlEntityType;
 import org.apache.olingo.commons.api.edm.provider.CsdlProperty;
 import org.apache.olingo.commons.api.edm.provider.CsdlPropertyRef;
 import org.apache.olingo.commons.api.edmx.EdmxReference;
@@ -50,7 +51,6 @@ import org.apache.olingo.commons.api.http.HttpMethod;
 import org.apache.olingo.commons.api.http.HttpStatusCode;
 import org.apache.olingo.server.api.*;
 import org.apache.olingo.server.api.serializer.EntityCollectionSerializerOptions;
-import org.apache.olingo.server.api.serializer.ODataSerializer;
 import org.apache.olingo.server.api.serializer.SerializerException;
 import org.apache.olingo.server.api.serializer.SerializerStreamResult;
 import org.apache.olingo.server.api.uri.UriInfo;
@@ -96,6 +96,8 @@ import org.wso2.carbon.dataservices.core.engine.DataEntry;
 import org.wso2.carbon.dataservices.core.odata.expression.ExpressionVisitorImpl;
 import org.wso2.carbon.dataservices.core.odata.expression.operand.TypedOperand;
 import org.wso2.carbon.dataservices.core.odata.expression.operand.VisitorOperand;
+import org.wso2.carbon.dataservices.core.odata.serializer.MyOData;
+import org.wso2.carbon.dataservices.core.odata.serializer.MyODataSerializer;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -166,6 +168,10 @@ public class ODataAdapter implements ServiceHandler {
 
     @Override
     public void init(OData odata, ServiceMetadata serviceMetadata) {
+        this.serviceMetadata = serviceMetadata;
+    }
+
+    public void init(MyOData odata, ServiceMetadata serviceMetadata) {
         this.serviceMetadata = serviceMetadata;
     }
 
@@ -441,8 +447,9 @@ public class ODataAdapter implements ServiceHandler {
                 } else {
 
                     //response.writeReadEntitySet(details.entityType, details.entitySet);
-                    OData odata = OData.newInstance();
-                    ODataSerializer serializer = odata.createSerializer(ContentType.APPLICATION_XML);
+                    //OData odata = OData.newInstance();
+                    MyOData odata = MyOData.newMyInstance();
+                    MyODataSerializer serializer = odata.createMySerializer(ContentType.APPLICATION_XML);
                     ServiceMetadata edm = odata.createServiceMetadata(getEdmProvider(), new ArrayList<EdmxReference>());
 
                     final String id = request.getODataRequest().getRawBaseUri() + "/" + details.edmEntitySet.getName();
@@ -466,23 +473,22 @@ public class ODataAdapter implements ServiceHandler {
 
                     ///////////////////////////////////////////////////////////////////////////
                     // Check if this is necessary. Might work with details.option = null.
-                    if(details.expandOption != null ) {
+//                    if(details.expandOption != null ) {
                         opts = EntityCollectionSerializerOptions.with().id(id)
                                 .writeContentErrorCallback(errorCallback)
-                                .contextURL(contextUrl).expand(details.expandOption).build();
-                    }
-                    if(details.countOption != null) {
-                        opts = EntityCollectionSerializerOptions.with().id(id)
-                                .writeContentErrorCallback(errorCallback)
-                                .contextURL(contextUrl).count(details.countOption).build();
-                    }
-                    else {
-                        opts = EntityCollectionSerializerOptions.with().id(id)
-                                .writeContentErrorCallback(errorCallback)
-                                .contextURL(contextUrl).build();
-                    }
+                                .contextURL(contextUrl).expand(details.expandOption).count(details.countOption).build();
+//                    }
+//                    if(details.countOption != null) {
+//                        opts = EntityCollectionSerializerOptions.with().id(id)
+//                                .writeContentErrorCallback(errorCallback)
+//                                .contextURL(contextUrl).count(details.countOption).build();
+//                    }
+//                    else {
+//                        opts = EntityCollectionSerializerOptions.with().id(id)
+//                                .writeContentErrorCallback(errorCallback)
+//                                .contextURL(contextUrl).build();
+//                    }
                     ////////////////////////////////////////////////////////////////////////////
-                    details.iterator.setCount(10);
                     SerializerStreamResult serializerResult = serializer.entityCollectionStreamed(edm,
                             details.edmEntitySet.getEntityType(), details.iterator, opts);
 
@@ -1472,7 +1478,7 @@ public class ODataAdapter implements ServiceHandler {
                 public Entity next() {
                     Entity entity = null;
                     entity = this.iterator.next();
-                    this.setCount(5);
+                    this.setCount(this.getCount()+1);
                     this.iterator.remove();
                     return entity;
                 }

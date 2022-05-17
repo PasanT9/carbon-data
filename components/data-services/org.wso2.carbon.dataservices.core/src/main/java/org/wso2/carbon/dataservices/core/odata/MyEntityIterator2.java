@@ -74,6 +74,8 @@ public class MyEntityIterator2 extends EntityIterator {
         if(nextLinkUri != null) {
             this.setNext(nextLinkUri);
         }
+
+        this.setCount(0);
     }
 
     public int getItemsToSkip() {
