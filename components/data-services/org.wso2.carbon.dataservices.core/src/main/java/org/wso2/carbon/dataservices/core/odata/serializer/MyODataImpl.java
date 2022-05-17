@@ -54,7 +54,7 @@ public class MyODataImpl extends MyOData {
         if (contentType.isCompatible(ContentType.APPLICATION_JSON)) {
             String metadata = contentType.getParameter("odata.metadata");
             if (metadata == null || "minimal".equalsIgnoreCase(metadata) || "none".equalsIgnoreCase(metadata) || "full".equalsIgnoreCase(metadata)) {
-                serializer = new ODataJsonSerializer(contentType);
+                serializer = new MyODataJsonSerializer(contentType);
             }
         } else if (contentType.isCompatible(ContentType.APPLICATION_XML) || contentType.isCompatible(ContentType.APPLICATION_ATOM_XML)) {
             serializer = new MyODataXmlSerializer();

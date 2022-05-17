@@ -445,7 +445,13 @@ public class ODataAdapter implements ServiceHandler {
                     //response.writeReadEntitySet(details.entityType, details.entitySet);
                     //OData odata = OData.newInstance();
                     MyOData odata = MyOData.newMyInstance();
-                    MyODataSerializer serializer = odata.createMySerializer(ContentType.APPLICATION_XML);
+                    MyODataSerializer serializer = null;
+                    if(request.getHeader("Accept") != null) {
+                        serializer = odata.createMySerializer(ContentType.parse(request.getHeader("Accept")));
+                    }
+                    else {
+                        serializer = odata.createMySerializer(ContentType.APPLICATION_XML);
+                    }
                     ServiceMetadata edm = odata.createServiceMetadata(getEdmProvider(), new ArrayList<EdmxReference>());
 
                     final String id = request.getODataRequest().getRawBaseUri() + "/" + details.edmEntitySet.getName();

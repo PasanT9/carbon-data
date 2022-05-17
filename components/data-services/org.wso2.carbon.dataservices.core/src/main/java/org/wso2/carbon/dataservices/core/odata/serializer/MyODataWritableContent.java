@@ -55,8 +55,8 @@ public class MyODataWritableContent implements ODataContent {
         }
 
         public ODataContent buildContent() {
-            if (this.serializer instanceof ODataJsonSerializer) {
-                StreamContent input = new StreamContentForJson(this.entities, this.entityType, (ODataJsonSerializer)this.serializer, this.metadata, this.options);
+            if (this.serializer instanceof MyODataJsonSerializer) {
+                StreamContent input = new StreamContentForJson(this.entities, this.entityType, (MyODataJsonSerializer)this.serializer, this.metadata, this.options);
                 return new MyODataWritableContent(input);
             } else if (this.serializer instanceof MyODataXmlSerializer) {
                 StreamContentForXml input = new StreamContentForXml(this.entities, this.entityType, (MyODataXmlSerializer)this.serializer, this.metadata, this.options);
@@ -106,9 +106,9 @@ public class MyODataWritableContent implements ODataContent {
     }
 
     private static class StreamContentForJson extends StreamContent {
-        private ODataJsonSerializer jsonSerializer;
+        private MyODataJsonSerializer jsonSerializer;
 
-        public StreamContentForJson(EntityIterator iterator, EdmEntityType entityType, ODataJsonSerializer jsonSerializer, ServiceMetadata metadata, EntityCollectionSerializerOptions options) {
+        public StreamContentForJson(EntityIterator iterator, EdmEntityType entityType, MyODataJsonSerializer jsonSerializer, ServiceMetadata metadata, EntityCollectionSerializerOptions options) {
             super(iterator, entityType, metadata, options);
             this.jsonSerializer = jsonSerializer;
         }

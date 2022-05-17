@@ -284,10 +284,6 @@ public class MyODataXmlSerializer extends MyAbstractMyODataSerializer {
                 writer.writeEndElement();
             }
 
-            if (entitySet != null && entitySet.getNext() != null) {
-                this.writeNextLink(entitySet, writer);
-            }
-
             boolean writeOnlyRef = options != null && options.getWriteOnlyReferences();
             if (options == null) {
                 this.writeEntitySet(metadata, entityType, entitySet, (ExpandOption)null, (Integer)null, (SelectOption)null, (String)null, writer, writeOnlyRef, name, (Set)null);
@@ -297,6 +293,10 @@ public class MyODataXmlSerializer extends MyAbstractMyODataSerializer {
 
             if (options != null && options.getCount() != null && options.getCount().getValue() && entitySet.getCount() != null) {
                 this.writeCount(entitySet, writer);
+            }
+
+            if (entitySet != null && entitySet.getNext() != null) {
+                this.writeNextLink(entitySet, writer);
             }
 
             writer.writeEndElement();
