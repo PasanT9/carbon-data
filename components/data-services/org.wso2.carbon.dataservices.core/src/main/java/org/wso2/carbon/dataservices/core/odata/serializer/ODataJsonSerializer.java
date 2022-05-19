@@ -63,8 +63,6 @@ import org.apache.olingo.server.api.uri.queryoption.ExpandItem;
 import org.apache.olingo.server.api.uri.queryoption.ExpandOption;
 import org.apache.olingo.server.api.uri.queryoption.LevelsExpandOption;
 import org.apache.olingo.server.api.uri.queryoption.SelectOption;
-import org.apache.olingo.server.core.ODataWritableContent;
-import org.apache.olingo.server.core.serializer.AbstractODataSerializer;
 import org.apache.olingo.server.core.serializer.SerializerResultImpl;
 import org.apache.olingo.server.core.serializer.json.ODataErrorSerializer;
 import org.apache.olingo.server.core.serializer.json.ServiceDocumentJsonSerializer;
@@ -75,13 +73,13 @@ import org.apache.olingo.server.core.serializer.utils.ExpandSelectHelper;
 import org.apache.olingo.server.core.uri.UriHelperImpl;
 import org.apache.olingo.server.core.uri.queryoption.ExpandOptionImpl;
 
-public class MyODataJsonSerializer extends MyAbstractMyODataSerializer {
+public class ODataJsonSerializer extends AbstractODataSerializer {
     private static final Map<Geospatial.Type, String> geoValueTypeToJsonName;
     private final boolean isIEEE754Compatible;
     private final boolean isODataMetadataNone;
     private final boolean isODataMetadataFull;
 
-    public MyODataJsonSerializer(ContentType contentType) {
+    public ODataJsonSerializer(ContentType contentType) {
         this.isIEEE754Compatible = ContentTypeHelper.isODataIEEE754Compatible(contentType);
         this.isODataMetadataNone = ContentTypeHelper.isODataMetadataNone(contentType);
         this.isODataMetadataFull = ContentTypeHelper.isODataMetadataFull(contentType);
@@ -180,7 +178,7 @@ public class MyODataJsonSerializer extends MyAbstractMyODataSerializer {
     }
 
     public SerializerStreamResult entityCollectionStreamed(ServiceMetadata metadata, EdmEntityType entityType, EntityIterator entities, EntityCollectionSerializerOptions options) throws SerializerException {
-        return MyODataWritableContent.with(entities, entityType, this, metadata, options).build();
+        return ODataWritableContent.with(entities, entityType, this, metadata, options).build();
     }
 
     public void entityCollectionIntoStream(ServiceMetadata metadata, EdmEntityType entityType, EntityIterator entitySet, EntityCollectionSerializerOptions options, OutputStream outputStream) throws SerializerException {

@@ -12,7 +12,7 @@ import org.apache.olingo.server.api.ODataServerError;
 import org.apache.olingo.server.api.ServiceMetadata;
 import org.apache.olingo.server.api.serializer.*;
 
-public interface MyODataSerializer {
+public interface ODataSerializer extends org.apache.olingo.server.api.serializer.ODataSerializer {
     String DEFAULT_CHARSET = "UTF-8";
 
     SerializerResult serviceDocument(ServiceMetadata var1, String var2) throws SerializerException;

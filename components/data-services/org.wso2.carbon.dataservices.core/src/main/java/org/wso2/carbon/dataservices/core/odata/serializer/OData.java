@@ -8,7 +8,6 @@ import org.apache.olingo.commons.api.edm.provider.CsdlEdmProvider;
 import org.apache.olingo.commons.api.edmx.EdmxReference;
 import org.apache.olingo.commons.api.ex.ODataRuntimeException;
 import org.apache.olingo.commons.api.format.ContentType;
-import org.apache.olingo.server.api.OData;
 import org.apache.olingo.server.api.ODataHandler;
 import org.apache.olingo.server.api.ODataHttpHandler;
 import org.apache.olingo.server.api.ServiceMetadata;
@@ -23,10 +22,10 @@ import org.apache.olingo.server.api.serializer.*;
 //import org.apache.olingo.server.api.serializer.ODataSerializer;
 import org.apache.olingo.server.api.uri.UriHelper;
 
-public abstract class MyOData extends OData {
+public abstract class OData extends org.apache.olingo.server.api.OData {
     private static final String IMPLEMENTATION = "org.apache.olingo.server.core.ODataImpl";
 
-    public MyOData() {
+    public OData() {
     }
 
     public static OData newInstance() {
@@ -39,19 +38,7 @@ public abstract class MyOData extends OData {
         }
     }
 
-    public static MyOData newMyInstance() {
-        try {
-            Class<?> clazz = Class.forName("org.wso2.carbon.dataservices.core.odata.serializer.MyODataImpl");
-            Object object = clazz.newInstance();
-            return (MyOData) object;
-        } catch (Exception var2) {
-            throw new ODataRuntimeException(var2);
-        }
-    }
-
     public abstract ODataSerializer createSerializer(ContentType var1) throws SerializerException;
-
-    public abstract MyODataSerializer createMySerializer(ContentType var1) throws SerializerException;
 
     public abstract FixedFormatSerializer createFixedFormatSerializer();
 

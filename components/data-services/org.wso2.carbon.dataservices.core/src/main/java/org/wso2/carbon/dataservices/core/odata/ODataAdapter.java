@@ -18,7 +18,6 @@
 
 package org.wso2.carbon.dataservices.core.odata;
 
-import org.apache.olingo.server.api.serializer.ODataSerializer;
 //import org.wso2.carbon.dataservices.core.odata.serializer.MyOData;
 import org.apache.axis2.databinding.utils.ConverterUtil;
 import org.apache.commons.codec.binary.Base64;
@@ -89,8 +88,8 @@ import org.wso2.carbon.dataservices.core.engine.DataEntry;
 import org.wso2.carbon.dataservices.core.odata.expression.ExpressionVisitorImpl;
 import org.wso2.carbon.dataservices.core.odata.expression.operand.TypedOperand;
 import org.wso2.carbon.dataservices.core.odata.expression.operand.VisitorOperand;
-import org.wso2.carbon.dataservices.core.odata.serializer.MyOData;
-import org.wso2.carbon.dataservices.core.odata.serializer.MyODataSerializer;
+import org.wso2.carbon.dataservices.core.odata.serializer.OData;
+import org.wso2.carbon.dataservices.core.odata.serializer.ODataSerializer;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -160,11 +159,11 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     @Override
-    public void init(OData odata, ServiceMetadata serviceMetadata) {
+    public void init(org.apache.olingo.server.api.OData odata, ServiceMetadata serviceMetadata) {
         this.serviceMetadata = serviceMetadata;
     }
 
-    public void init(MyOData odata, ServiceMetadata serviceMetadata) {
+    public void init(OData odata, ServiceMetadata serviceMetadata) {
         this.serviceMetadata = serviceMetadata;
     }
 
@@ -231,7 +230,7 @@ public class ODataAdapter implements ServiceHandler {
         SkipTokenOption skipTokenOption = uriInfo.getSkipTokenOption();
         SelectOption selectOption = uriInfo.getSelectOption();
 
-        int pageSize = this.getPageSize(request);
+        QueryOptions queryOptions = new QueryOptions(expandOption, filterOption, countOption, skipOption, topOption, orderByOption, skipTokenOption);
 
         try {
             if (request.isSingleton()) {
@@ -241,6 +240,11 @@ public class ODataAdapter implements ServiceHandler {
             } else {
                 edmEntitySet = request.getEntitySet();
 
+                if(skipTokenOption != null) {
+                    int pageSize = this.getPageSize(request);
+                    queryOptions.initPagination(pageSize, baseURL, edmEntitySet.getName());
+                }
+
                 entityType = edmEntitySet.getEntityType();
                 List<UriParameter> keys = request.getKeyPredicates();
                 if (keys != null && !keys.isEmpty()) {
@@ -249,9 +253,10 @@ public class ODataAdapter implements ServiceHandler {
                         details.eTagMatched = true;
                     }
                 } else {
-                    //entitySet = getEntityCollection(edmEntitySet.getName(), baseURL);
-                    iterator = getEntityIterator(edmEntitySet, baseURL, expandOption, filterOption, countOption, skipOption, topOption, orderByOption, skipTokenOption, pageSize);
-                    //iterator = getEntityIterator(edmEntitySet.getName(), baseURL, null);
+
+
+                    iterator = getEntityIterator(edmEntitySet, baseURL, queryOptions);
+
                 }
             }
 
@@ -260,9 +265,16 @@ public class ODataAdapter implements ServiceHandler {
             if (!request.getNavigations().isEmpty() && entity != null) {
                 for (UriResourceNavigation nav : request.getNavigations()) {
                     if (nav.isCollection()) {
-                        //entitySet = getNavigableEntitySet(this.serviceMetadata, entity, nav.getProperty(), baseURL);
-                        iterator = getNavigableEntityIterator(this.serviceMetadata, entity, nav.getProperty(), baseURL);
+
                         edmEntitySet =  getNavigationTargetEntitySet(edmEntitySet, nav.getProperty());
+
+                        if(skipTokenOption != null) {
+                            int pageSize = this.getPageSize(request);
+                            queryOptions.initPagination(pageSize, baseURL, edmEntitySet.getName());
+                        }
+
+                        iterator = getNavigableEntityIterator(edmEntitySet, this.serviceMetadata, entity, nav.getProperty(), baseURL, queryOptions);
+
 
                     } else {
                         parentEntity = entity;
@@ -407,7 +419,13 @@ public class ODataAdapter implements ServiceHandler {
         response.accepts(new ServiceResponseVisior() {
             @Override
             public void visit(CountResponse response) throws ODataApplicationException, SerializerException {
-                response.writeCount(details.entitySet.getCount());
+
+                while(details.iterator.hasNext()) {
+                    details.iterator.next();
+                }
+
+                response.writeCount(details.iterator.getCount());
+
             }
 
             @Override
@@ -442,16 +460,24 @@ public class ODataAdapter implements ServiceHandler {
                     response.writeReadEntitySet(details.entityType, new EntityCollection());
                 } else {
 
-                    //response.writeReadEntitySet(details.entityType, details.entitySet);
-                    //OData odata = OData.newInstance();
-                    MyOData odata = MyOData.newMyInstance();
-                    MyODataSerializer serializer = null;
-                    if(request.getHeader("Accept") != null) {
-                        serializer = odata.createMySerializer(ContentType.parse(request.getHeader("Accept")));
+                    OData odata = OData.newInstance();
+                    ODataSerializer serializer = null;
+
+                    if(ContentType.parse(request.getHeader("Accept")) != null) {
+                        if(ContentType.parse(request.getHeader("Accept")).equals(ContentType.APPLICATION_JSON)) {
+                            serializer = odata.createSerializer(ContentType.APPLICATION_JSON);
+                        }
+                        else if(ContentType.parse(request.getHeader("Accept")).equals(ContentType.APPLICATION_XML)) {
+                            serializer = odata.createSerializer(ContentType.APPLICATION_XML);
+                        }
+                        else {
+                            throw new IllegalArgumentException("Does not support " + request.getHeader("Accept") + " content type");
+                        }
                     }
                     else {
-                        serializer = odata.createMySerializer(ContentType.APPLICATION_XML);
+                        serializer = odata.createSerializer(ContentType.APPLICATION_XML);
                     }
+
                     ServiceMetadata edm = odata.createServiceMetadata(getEdmProvider(), new ArrayList<EdmxReference>());
 
                     final String id = request.getODataRequest().getRawBaseUri() + "/" + details.edmEntitySet.getName();
@@ -486,32 +512,16 @@ public class ODataAdapter implements ServiceHandler {
                         }
                     };
 
-                    ///////////////////////////////////////////////////////////////////////////
-                    // Check if this is necessary. Might work with details.option = null.
-//                    if(details.expandOption != null ) {
-                        opts = EntityCollectionSerializerOptions.with().id(id)
-                                .writeContentErrorCallback(errorCallback)
-                                .contextURL(contextUrl).expand(details.expandOption).count(details.countOption).select(details.selectOption).build();
-//                    }
-//                    if(details.countOption != null) {
-//                        opts = EntityCollectionSerializerOptions.with().id(id)
-//                                .writeContentErrorCallback(errorCallback)
-//                                .contextURL(contextUrl).count(details.countOption).build();
-//                    }
-//                    else {
-//                        opts = EntityCollectionSerializerOptions.with().id(id)
-//                                .writeContentErrorCallback(errorCallback)
-//                                .contextURL(contextUrl).build();
-//                    }
-                    ////////////////////////////////////////////////////////////////////////////
+                    opts = EntityCollectionSerializerOptions.with().id(id)
+                            .writeContentErrorCallback(errorCallback)
+                            .contextURL(contextUrl).expand(details.expandOption).count(details.countOption).select(details.selectOption).build();
+
                     SerializerStreamResult serializerResult = serializer.entityCollectionStreamed(edm,
                             details.edmEntitySet.getEntityType(), details.iterator, opts);
 
                     response.getODataResponse().setODataContent(serializerResult.getODataContent());
                     response.getODataResponse().setStatusCode(HttpStatusCode.OK.getStatusCode());
                     response.getODataResponse().setHeader(HttpHeader.CONTENT_TYPE, ContentType.APPLICATION_XML.toContentTypeString());
-
-                    //response.writeReadEntitySet(details.entityType, new EntityCollection());
 
                 }
             }
@@ -536,6 +546,18 @@ public class ODataAdapter implements ServiceHandler {
                 }
             }
         });
+    }
+
+    private boolean isAcceptHeaderParsable(DataRequest request) {
+
+        try {
+            ;
+            return true;
+        }
+        catch (Exception e) {
+            return false;
+        }
+
     }
 
     @Override
@@ -1220,107 +1242,34 @@ public class ODataAdapter implements ServiceHandler {
         }
     }
 
-    ////////////////////////////////
-
-    public EntityIterator createEntityIteratorFromDataEntryList(String tableName,
-                                                                String baseURL)throws ODataApplicationException {
+    /**
+     * Returns entity iterator for entity streaming support in olingo.  .
+     *
+     * @param edmEntitySet  Container of the Entity Type
+     * @param baseURL   Base URL of the request
+     * @param queryOptions  Odata query options
+     * @param properties    Navigation properties
+     * @param tableName Name of the table
+     * @return Entity Iterator
+     * @see EntityIterator
+     */
+    public EntityIterator createEntityIterator(EdmEntitySet edmEntitySet,
+                                               String baseURL, QueryOptions queryOptions, ODataEntry properties, String tableName) {
         try {
-            //EntityCollection entitySet = new EntityCollection();
-            this.dataHandler.initReadTableStreaming();
+
+            this.dataHandler.initStreaming();
             List<Entity> entityList = new ArrayList<Entity>();
 
             Iterator<Entity> it = entityList.iterator();
-            return new MyEntityIterator(this, tableName, baseURL, it, entityList) {
 
-                @Override
-                public boolean hasNext() {
-                    if(!this.iterator.hasNext()) {
-                        try {
-                            //this.getAdapter().entitySet = new EntityCollection();
-                            String tableName = this.getTableName();
-                            List<ODataEntry> entries = this.getAdapter().dataHandler.readTableStreaming(tableName);
-                            String baseURL = this.getBaseURL();
-                            int count = 0;
-                            for (int i = 0; i < entries.size(); i++) {
-                                Entity entity = new Entity();
-                                for (DataColumn column : this.getAdapter().dataHandler.getTableMetadata().get(tableName).values()) {
-                                    String columnName = column.getColumnName();
-                                    entity.addProperty(createPrimitive(column.getColumnType(), columnName, entries.get(i).getValue(columnName)));
-                                }
-                                //Set ETag to the entity
-                                EdmEntityType entityType = this.getAdapter().serviceMetadata.getEdm()
-                                        .getEntityType(new FullQualifiedName(this.getAdapter().namespace,
-                                                tableName));
-                                entity.setId(new URI(ODataUtils.buildLocation(baseURL, entity, entityType.getName(), entityType)));
-                                entity.setETag(entries.get(i).getValue("ETag"));
-                                entity.setType(new FullQualifiedName(this.getAdapter().namespace, tableName).getFullQualifiedNameAsString());
-                                //this.getAdapter().entityList.add(entity);
-                                this.getEntityList().add(entity);
-                                count++;
-                            }
-
-                            this.iterator = this.getEntityList().iterator();
-                            return this.iterator.hasNext();
-                        }
-                        catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                    return this.iterator.hasNext();
-                }
-
-                @Override
-                public Entity next() {
-                    Entity entity = null;
-                    entity = this.iterator.next();
-                    this.iterator.remove();
-                    return entity;
-                }
-            };
-//        }
-
-//        catch (URISyntaxException e) {
-//            throw new ODataServiceFault(e, "Error occurred when creating id for the entity. :" + e.getMessage());
-//        } catch (ParseException e) {
-//            throw new ODataServiceFault(e, "Error occurred when creating a property for the entity. :" +
-//                    e.getMessage());
-//        } catch (EdmPrimitiveTypeException e) {
-//            throw new ODataServiceFault(e, "Error occurred when creating a property for the entity. :" +
-//                    e.getMessage());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        return null;
-    }
-
-    public EntityIterator createEntityIteratorFromDataEntryListWithExpandOption(EdmEntitySet edmEntitySet,
-                                                                String baseURL, ExpandOption expandOption, FilterOption filterOption, CountOption countOption, SkipOption skipOption, TopOption topOption, OrderByOption orderByOption, SkipTokenOption skipTokenOption, int pageSize) throws ODataApplicationException {
-        try {
-
-            //EntityCollection entitySet = new EntityCollection();
-            this.dataHandler.initReadTableStreaming();
-            List<Entity> entityList = new ArrayList<Entity>();
-
-            Iterator<Entity> it = entityList.iterator();
-            int rowCount = this.dataHandler.countRows(edmEntitySet.getName());
-
-            int itemsToSkip = -1;
-            URI nextLinkUri = null;
-
-            if(skipTokenOption != null) {
-                int page = Integer.parseInt(skipTokenOption.getValue());
-                itemsToSkip = page * pageSize;
-
-                int nextPage = page + 1;
-                String nextLink = baseURL + "/" + edmEntitySet.getName() + "?$skiptoken=" + nextPage;
-                nextLinkUri = new URI(nextLink);
+            int rowsCount = -1;
+            if(properties != null) {
+                rowsCount = this.dataHandler.getRowCountWithKeys(tableName, properties);
+            } else {
+                rowsCount = this.dataHandler.getRowCount(tableName);
             }
 
-
-            //this.setNext(new URI(nextLink));
-
-            return new MyEntityIterator2(this, edmEntitySet, baseURL, it, entityList, expandOption, filterOption, countOption, skipOption, topOption, orderByOption, skipTokenOption, rowCount, itemsToSkip, pageSize, nextLinkUri) {
+            return new StreamingEntityIterator(this, edmEntitySet, baseURL, it, entityList, queryOptions, rowsCount, properties, tableName) {
 
                 @Override
                 public boolean hasNext() {
@@ -1328,37 +1277,42 @@ public class ODataAdapter implements ServiceHandler {
                         try {
 
                             EdmEntitySet edmEntitySet = this.getEdmEntitySet();
-                            ExpandOption expandOption = this.getExpandOption();
 
-                            String tableName = edmEntitySet.getName();
+                            QueryOptions queryOptions = this.getQueryOptions() != null ? this.getQueryOptions() : new QueryOptions();
+
+                            ODataAdapter oDataAdapter = this.getAdapter();
+                            String tableName = this.getTableName();
+
                             List<ODataEntry> entries = null;
-                            if(this.getOrderByOption() != null){
-                                entries = this.getAdapter().dataHandler.readTableStreamingOrder(tableName, this.getOrderByOption());
+                            if(queryOptions.getOrderByOption() != null){
+                                entries = oDataAdapter.dataHandler.StreamTableWithOrder(tableName, queryOptions.getOrderByOption());
+                            }
+                            else if(this.getProperties() != null) {
+                                entries = oDataAdapter.dataHandler.streamTableWithKeys(tableName, this.getProperties());
                             }
                             else {
-                                entries = this.getAdapter().dataHandler.readTableStreaming(tableName);
+                                entries = oDataAdapter.dataHandler.streamTable(tableName);
                             }
                             String baseURL = this.getBaseURL();
                             for (int i = 0; i < entries.size(); i++) {
                                 Entity entity = new Entity();
-                                for (DataColumn column : this.getAdapter().dataHandler.getTableMetadata().get(tableName).values()) {
+                                for (DataColumn column : oDataAdapter.dataHandler.getTableMetadata().get(tableName).values()) {
                                     String columnName = column.getColumnName();
                                     entity.addProperty(createPrimitive(column.getColumnType(), columnName, entries.get(i).getValue(columnName)));
                                 }
                                 //Set ETag to the entity
-                                EdmEntityType entityType = this.getAdapter().serviceMetadata.getEdm()
-                                        .getEntityType(new FullQualifiedName(this.getAdapter().namespace,
+                                EdmEntityType entityType = oDataAdapter.serviceMetadata.getEdm()
+                                        .getEntityType(new FullQualifiedName(oDataAdapter.namespace,
                                                 tableName));
                                 entity.setId(new URI(ODataUtils.buildLocation(baseURL, entity, entityType.getName(), entityType)));
                                 entity.setETag(entries.get(i).getValue("ETag"));
-                                entity.setType(new FullQualifiedName(this.getAdapter().namespace, tableName).getFullQualifiedNameAsString());
-                                //this.getAdapter().entityList.add(entity);
+                                entity.setType(new FullQualifiedName(oDataAdapter.namespace, tableName).getFullQualifiedNameAsString());
 
                                 boolean addEntity = true;
-                                if(this.getFilterOption() != null){
+                                if(queryOptions.getFilterOption() != null){
                                     try {
                                         final VisitorOperand operand =
-                                                this.getFilterOption().getExpression().accept(new ExpressionVisitorImpl(entity, edmEntitySet));
+                                                queryOptions.getFilterOption().getExpression().accept(new ExpressionVisitorImpl(entity, edmEntitySet));
                                         final TypedOperand typedOperand = operand.asTypedOperand();
 
                                         if (typedOperand.is(ODataConstants.primitiveBoolean)) {
@@ -1375,27 +1329,30 @@ public class ODataAdapter implements ServiceHandler {
                                         e.printStackTrace();
                                     }
                                 }
-                                if(this.getSkipOption() != null && addEntity) {
-                                    this.skipCount++;
-                                    if(this.skipCount <= this.getSkipOption().getValue()) {
+                                if(queryOptions.getSkipOption() != null && addEntity) {
+                                    queryOptions.stepSkipCount();
+                                    //this.skipCount++;
+                                    if(queryOptions.getSkipCount() <= queryOptions.getSkipOption().getValue()) {
                                         addEntity = false;
                                     }
                                 }
-                                if(this.getTopOption() != null && addEntity) {
-                                    this.topCount++;
-                                    if(this.topCount > this.getTopOption().getValue()) {
+                                if(queryOptions.getTopOption() != null && addEntity) {
+                                    queryOptions.stepTopCount();
+
+                                    //this.topCount++;
+                                    if(queryOptions.getTopCount() > queryOptions.getTopOption().getValue()) {
                                         this.iterator = this.getEntityList().iterator();
                                         return this.iterator.hasNext();
                                     }
                                 }
 
-                                if(this.getSkipTokenOption() != null && addEntity) {
-                                    this.skipTokenCount++;
+                                if(queryOptions.getSkipTokenOption() != null && addEntity) {
+                                    queryOptions.stepSkipTokenCount();
                                     try {
-                                        if(this.skipTokenCount <= this.getItemsToSkip()) {
+                                        if(queryOptions.getSkipTokenCount() <= queryOptions.getItemsToSkip()) {
                                             addEntity = false;
                                         }
-                                        else if (this.skipTokenCount > (this.getItemsToSkip() + this.getPageSize())) {
+                                        else if (queryOptions.getSkipTokenCount() > (queryOptions.getItemsToSkip() + queryOptions.getPageSize())) {
                                             this.iterator = this.getEntityList().iterator();
                                             return this.iterator.hasNext();
                                         }
@@ -1405,7 +1362,7 @@ public class ODataAdapter implements ServiceHandler {
                                     }
                                 }
 
-                                this.currentCount++;
+                                this.EntityCount++;
 
                                 if(addEntity) {
                                     this.getEntityList().add(entity);
@@ -1414,10 +1371,10 @@ public class ODataAdapter implements ServiceHandler {
                                     continue;
                                 }
 
-                                if(expandOption != null ) {
+                                if(queryOptions.getExpandOption() != null ) {
                                     // retrieve the EdmNavigationProperty from the expand expression.
                                     EdmNavigationProperty edmNavigationProperty = null;
-                                    List<ExpandItem> expandItems = expandOption.getExpandItems();
+                                    List<ExpandItem> expandItems = queryOptions.getExpandOption().getExpandItems();
 
                                     for (ExpandItem expandItem : expandItems) {
                                         if (expandItem.isStar()) {
@@ -1445,7 +1402,7 @@ public class ODataAdapter implements ServiceHandler {
                                             link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
                                             link.setRel(Constants.NS_ASSOCIATION_LINK_REL + navPropName);
                                             if (edmNavigationProperty.isCollection()) {
-                                                EntityCollection expandEntityCollection = getNavigableEntitySet(this.getAdapter().serviceMetadata,
+                                                EntityCollection expandEntityCollection = getNavigableEntitySet(oDataAdapter.serviceMetadata,
                                                         entity,
                                                         edmNavigationProperty,
                                                         baseURL);
@@ -1467,14 +1424,14 @@ public class ODataAdapter implements ServiceHandler {
                                     }
                                 }
                             }
-                            if((this.currentCount < this.rowCount) || (!this.getEntityList().isEmpty())) {
-                                if(this.getFilterOption() != null && (this.currentCount < this.rowCount) && (this.getEntityList().isEmpty())){
+                            if(this.EntityCount < this.rowCount) {
+                                if(queryOptions.getFilterOption() != null && (this.getEntityList().isEmpty())){
                                     return hasNext();
                                 }
-                                if(this.getSkipOption() != null && (this.skipCount <= this.getSkipOption().getValue()) && (this.getEntityList().isEmpty())){
+                                if(queryOptions.getSkipOption() != null && (queryOptions.getSkipCount() <= queryOptions.getSkipOption().getValue()) && (this.getEntityList().isEmpty())){
                                     return hasNext();
                                 }
-                                if(this.getSkipTokenOption() != null && (this.skipTokenCount <= this.getItemsToSkip()) && this.getEntityList().isEmpty()) {
+                                if(queryOptions.getSkipTokenOption() != null && (queryOptions.getSkipTokenCount() <= queryOptions.getItemsToSkip()) && this.getEntityList().isEmpty()) {
                                     return hasNext();
                                 }
                             }
@@ -1499,25 +1456,12 @@ public class ODataAdapter implements ServiceHandler {
                 }
 
             };
-//        }
-
-//        catch (URISyntaxException e) {
-//            throw new ODataServiceFault(e, "Error occurred when creating id for the entity. :" + e.getMessage());
-//        } catch (ParseException e) {
-//            throw new ODataServiceFault(e, "Error occurred when creating a property for the entity. :" +
-//                    e.getMessage());
-//        } catch (EdmPrimitiveTypeException e) {
-//            throw new ODataServiceFault(e, "Error occurred when creating a property for the entity. :" +
-//                    e.getMessage());
         } catch (Exception e) {
             e.printStackTrace();
         }
 
         return null;
     }
-
-
-    ///////////////////////////////////
 
     /**
      * This method creates the entity in table by calling the insertEntityToTable method in ODataDataHandler.
@@ -1735,96 +1679,14 @@ public class ODataAdapter implements ServiceHandler {
         return createEntityCollectionFromDataEntryList(tableName, this.dataHandler.readTable(tableName), baseUrl);
     }
 
-    private EntityIterator getEntityIterator(EdmEntitySet edmEntitySet, String baseUrl, ExpandOption expandOption, FilterOption filterOption, CountOption countOption, SkipOption skipOption, TopOption topOption, OrderByOption orderByOption, SkipTokenOption skipTokenOption, int pageSize) throws ODataServiceFault {
+    private EntityIterator getEntityIterator(EdmEntitySet edmEntitySet, String baseUrl, QueryOptions queryOptions) throws ODataServiceFault {
         try {
-//            if(expandOption != null ){
-                return createEntityIteratorFromDataEntryListWithExpandOption(edmEntitySet, baseUrl, expandOption, filterOption, countOption, skipOption, topOption, orderByOption, skipTokenOption, pageSize);
-//            }
-//            else {
-//                return createEntityIteratorFromDataEntryList(edmEntitySet.getName(), baseUrl);
-//            }
-
-//            if(filterOption != null) {
-//
-//                QueryHandler.applyFilterSystemQuery(filterOption, details.entitySet, edmEntitySet);
-//            }
+            return createEntityIterator(edmEntitySet, baseUrl, queryOptions, null, edmEntitySet.getName());
         }
         catch (Exception e) {
             e.printStackTrace();
             return null;
         }
-    }
-
-    private EntityIterator createEntityIteratorFromDataEntryListWithKeys(String tableName, ODataEntry properties, String baseURL){
-        try {
-            //EntityCollection entitySet = new EntityCollection();
-            this.dataHandler.initReadTableStreaming();
-            List<Entity> entityList = new ArrayList<Entity>();
-
-            Iterator<Entity> it = entityList.iterator();
-            return new MyEntityIterator3(this, tableName, baseURL, it, entityList, properties) {
-
-                @Override
-                public boolean hasNext() {
-                    if(!this.iterator.hasNext()) {
-                        try {
-                            //this.getAdapter().entitySet = new EntityCollection();
-                            String tableName = this.getTableName();
-                            List<ODataEntry> entries = this.getAdapter().dataHandler.readTableWithKeysStreaming(tableName, this.getProperties());
-//                            List<ODataEntry> entries = this.getAdapter().dataHandler.readTableStreaming(tableName);
-                            String baseURL = this.getBaseURL();
-                            int count = 0;
-                            for (int i = 0; i < entries.size(); i++) {
-                                Entity entity = new Entity();
-                                for (DataColumn column : this.getAdapter().dataHandler.getTableMetadata().get(tableName).values()) {
-                                    String columnName = column.getColumnName();
-                                    entity.addProperty(createPrimitive(column.getColumnType(), columnName, entries.get(i).getValue(columnName)));
-                                }
-                                //Set ETag to the entity
-                                EdmEntityType entityType = this.getAdapter().serviceMetadata.getEdm()
-                                        .getEntityType(new FullQualifiedName(this.getAdapter().namespace,
-                                                tableName));
-                                entity.setId(new URI(ODataUtils.buildLocation(baseURL, entity, entityType.getName(), entityType)));
-                                entity.setETag(entries.get(i).getValue("ETag"));
-                                entity.setType(new FullQualifiedName(this.getAdapter().namespace, tableName).getFullQualifiedNameAsString());
-                                //this.getAdapter().entityList.add(entity);
-                                this.getEntityList().add(entity);
-                                count++;
-                            }
-
-                            this.iterator = this.getEntityList().iterator();
-                            return this.iterator.hasNext();
-                        }
-                        catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                    return this.iterator.hasNext();
-                }
-
-                @Override
-                public Entity next() {
-                    Entity entity = null;
-                    entity = this.iterator.next();
-                    this.iterator.remove();
-                    return entity;
-                }
-            };
-//        }
-
-//        catch (URISyntaxException e) {
-//            throw new ODataServiceFault(e, "Error occurred when creating id for the entity. :" + e.getMessage());
-//        } catch (ParseException e) {
-//            throw new ODataServiceFault(e, "Error occurred when creating a property for the entity. :" +
-//                    e.getMessage());
-//        } catch (EdmPrimitiveTypeException e) {
-//            throw new ODataServiceFault(e, "Error occurred when creating a property for the entity. :" +
-//                    e.getMessage());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        return null;
     }
 
     /**
@@ -2037,8 +1899,8 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     // Set Navingation with streaming
-    private EntityIterator getNavigableEntityIterator(ServiceMetadata metadata, Entity parentEntity,
-                                                   EdmNavigationProperty navigation, String url)
+    private EntityIterator getNavigableEntityIterator(EdmEntitySet edmEntitySet, ServiceMetadata metadata, Entity parentEntity,
+                                                   EdmNavigationProperty navigation, String url, QueryOptions queryOptions)
             throws ODataServiceFault, ODataApplicationException {
 
 
@@ -2057,11 +1919,8 @@ public class ODataAdapter implements ServiceHandler {
             }
         }
         if(!properties.isEmpty()) {
-            return createEntityIteratorFromDataEntryListWithKeys(linkName, wrapPropertiesToDataEntry(type, properties, propertyMap), url);
-
-//            return createEntityCollectionFromDataEntryList(linkName, dataHandler
-//                    .readTableWithKeysStreaming(linkName, wrapPropertiesToDataEntry(type, properties, propertyMap)), url);
-        }
+            return createEntityIterator(edmEntitySet, url, queryOptions, wrapPropertiesToDataEntry(type, properties, propertyMap), linkName);
+         }
         return null;
     }
 

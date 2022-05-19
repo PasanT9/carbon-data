@@ -9,7 +9,6 @@ import org.apache.olingo.commons.api.edm.provider.CsdlEdmProvider;
 import org.apache.olingo.commons.api.edmx.EdmxReference;
 import org.apache.olingo.commons.api.format.ContentType;
 import org.apache.olingo.commons.core.edm.primitivetype.EdmPrimitiveTypeFactory;
-import org.apache.olingo.server.api.OData;
 import org.apache.olingo.server.api.ODataHandler;
 import org.apache.olingo.server.api.ODataHttpHandler;
 import org.apache.olingo.server.api.ServiceMetadata;
@@ -23,7 +22,6 @@ import org.apache.olingo.server.api.prefer.Preferences;
 import org.apache.olingo.server.api.serializer.EdmAssistedSerializer;
 import org.apache.olingo.server.api.serializer.EdmDeltaSerializer;
 import org.apache.olingo.server.api.serializer.FixedFormatSerializer;
-import org.apache.olingo.server.api.serializer.ODataSerializer;
 import org.apache.olingo.server.api.serializer.SerializerException;
 import org.apache.olingo.server.api.serializer.SerializerException.MessageKeys;
 import org.apache.olingo.server.api.uri.UriHelper;
@@ -41,41 +39,22 @@ import org.apache.olingo.server.core.serializer.FixedFormatSerializerImpl;
 import org.apache.olingo.server.core.serializer.json.EdmAssistedJsonSerializer;
 import org.apache.olingo.server.core.serializer.json.JsonDeltaSerializer;
 import org.apache.olingo.server.core.serializer.json.JsonDeltaSerializerWithNavigations;
-import org.apache.olingo.server.core.serializer.json.ODataJsonSerializer;
 //import org.apache.olingo.server.core.serializer.xml.ODataXmlSerializer;
 import org.apache.olingo.server.core.uri.UriHelperImpl;
 
-public class MyODataImpl extends MyOData {
-    public MyODataImpl() {
-    }
-
-    public MyODataSerializer createMySerializer(ContentType contentType) throws SerializerException {
-        ODataSerializer serializer = null;
-        if (contentType.isCompatible(ContentType.APPLICATION_JSON)) {
-            String metadata = contentType.getParameter("odata.metadata");
-            if (metadata == null || "minimal".equalsIgnoreCase(metadata) || "none".equalsIgnoreCase(metadata) || "full".equalsIgnoreCase(metadata)) {
-                serializer = new MyODataJsonSerializer(contentType);
-            }
-        } else if (contentType.isCompatible(ContentType.APPLICATION_XML) || contentType.isCompatible(ContentType.APPLICATION_ATOM_XML)) {
-            serializer = new MyODataXmlSerializer();
-        }
-
-        if (serializer == null) {
-            throw new SerializerException("Unsupported format: " + contentType.toContentTypeString(), MessageKeys.UNSUPPORTED_FORMAT, new String[]{contentType.toContentTypeString()});
-        } else {
-            return (MyODataSerializer)serializer;
-        }
+public class ODataImpl extends OData {
+    public ODataImpl() {
     }
 
     public ODataSerializer createSerializer(ContentType contentType) throws SerializerException {
-        ODataSerializer serializer = null;
+        org.apache.olingo.server.api.serializer.ODataSerializer serializer = null;
         if (contentType.isCompatible(ContentType.APPLICATION_JSON)) {
             String metadata = contentType.getParameter("odata.metadata");
             if (metadata == null || "minimal".equalsIgnoreCase(metadata) || "none".equalsIgnoreCase(metadata) || "full".equalsIgnoreCase(metadata)) {
                 serializer = new ODataJsonSerializer(contentType);
             }
         } else if (contentType.isCompatible(ContentType.APPLICATION_XML) || contentType.isCompatible(ContentType.APPLICATION_ATOM_XML)) {
-            serializer = new MyODataXmlSerializer();
+            serializer = new ODataXmlSerializer();
         }
 
         if (serializer == null) {
@@ -84,6 +63,24 @@ public class MyODataImpl extends MyOData {
             return (ODataSerializer)serializer;
         }
     }
+
+//    public org.apache.olingo.server.api.serializer.ODataSerializer createSerializer(ContentType contentType) throws SerializerException {
+//        org.apache.olingo.server.api.serializer.ODataSerializer serializer = null;
+//        if (contentType.isCompatible(ContentType.APPLICATION_JSON)) {
+//            String metadata = contentType.getParameter("odata.metadata");
+//            if (metadata == null || "minimal".equalsIgnoreCase(metadata) || "none".equalsIgnoreCase(metadata) || "full".equalsIgnoreCase(metadata)) {
+//                serializer = new org.apache.olingo.server.core.serializer.json.ODataJsonSerializer(contentType);
+//            }
+//        } else if (contentType.isCompatible(ContentType.APPLICATION_XML) || contentType.isCompatible(ContentType.APPLICATION_ATOM_XML)) {
+//            serializer = new ODataXmlSerializer();
+//        }
+//
+//        if (serializer == null) {
+//            throw new SerializerException("Unsupported format: " + contentType.toContentTypeString(), MessageKeys.UNSUPPORTED_FORMAT, new String[]{contentType.toContentTypeString()});
+//        } else {
+//            return (org.apache.olingo.server.api.serializer.ODataSerializer)serializer;
+//        }
+//    }
 
     public FixedFormatSerializer createFixedFormatSerializer() {
         return new FixedFormatSerializerImpl();

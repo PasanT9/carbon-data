@@ -127,23 +127,23 @@ public class CassandraDataHandler implements ODataDataHandler {
         return entryList;
     }
 
-    public List<ODataEntry> readTableStreaming(String tableName) throws ODataServiceFault {
+    public List<ODataEntry> streamTable(String tableName) throws ODataServiceFault {
         return null;
     }
 
-    public int countRows(String tableName) throws ODataServiceFault {
+    public int getRowCount(String tableName, ODataEntry properties) throws ODataServiceFault {
         return -1;
     }
 
-    public List<ODataEntry> readTableWithKeysStreaming(String tableName, ODataEntry keys) throws ODataServiceFault {
+    public List<ODataEntry> streamTableWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
         return null;
     }
 
-    public void initReadTableStreaming() {
+    public void initStreaming() {
 
     }
 
-    public List<ODataEntry> readTableStreamingOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault {
+    public List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault {
         return null;
     }
 
@@ -363,6 +363,16 @@ public class CassandraDataHandler implements ODataDataHandler {
     public void deleteReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable,
                                 ODataEntry navigationTableKeys) throws ODataServiceFault {
         throw new ODataServiceFault("Cassandra datasources doesn't support references.");
+    }
+
+    @Override
+    public int getRowCount(String tableName) throws ODataServiceFault {
+        return 0;
+    }
+
+    @Override
+    public int getRowCountWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
+        return 0;
     }
 
     /**

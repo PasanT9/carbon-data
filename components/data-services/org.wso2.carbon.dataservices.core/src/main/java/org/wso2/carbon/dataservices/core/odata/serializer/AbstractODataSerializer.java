@@ -3,15 +3,13 @@ package org.wso2.carbon.dataservices.core.odata.serializer;
 import java.io.IOException;
 import java.io.OutputStream;
 //import org.apache.olingo.server.api.serializer.ODataSerializer;
-import org.apache.olingo.server.api.serializer.ODataSerializer;
 import org.apache.olingo.server.api.serializer.SerializerException;
 import org.apache.olingo.server.api.serializer.SerializerException.MessageKeys;
-import org.apache.olingo.server.core.serializer.AbstractODataSerializer;
 
-public abstract class MyAbstractMyODataSerializer extends AbstractODataSerializer implements MyODataSerializer {
+public abstract class AbstractODataSerializer extends org.apache.olingo.server.core.serializer.AbstractODataSerializer implements ODataSerializer {
     protected static final String IO_EXCEPTION_TEXT = "An I/O exception occurred.";
 
-    public MyAbstractMyODataSerializer() {
+    public AbstractODataSerializer() {
     }
 
     protected void closeCircleStreamBufferOutput(OutputStream outputStream, SerializerException cachedException) throws SerializerException {

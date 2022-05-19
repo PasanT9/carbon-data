@@ -40,14 +40,13 @@ public interface ODataDataHandler {
      */
     List<ODataEntry> readTable(String tableName) throws ODataServiceFault;
 
+    List<ODataEntry> streamTable(String tableName) throws ODataServiceFault;
 
-    List<ODataEntry> readTableStreaming(String tableName) throws ODataServiceFault;
+    List<ODataEntry> streamTableWithKeys(String tableName, ODataEntry keys)  throws ODataServiceFault ;
 
-    List<ODataEntry> readTableWithKeysStreaming(String tableName, ODataEntry keys)  throws ODataServiceFault ;
+    List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault;
 
-    List<ODataEntry> readTableStreamingOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault;
-
-    void initReadTableStreaming();
+    void initStreaming();
 
     /**
      * This method read the table with Keys and return.
@@ -176,5 +175,7 @@ public interface ODataDataHandler {
     void deleteReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable,
                          ODataEntry navigationTableKeys) throws ODataServiceFault;
 
-    int countRows(String tableName) throws ODataServiceFault;
+    int getRowCount(String tableName) throws ODataServiceFault;
+
+    int getRowCountWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault;
 }

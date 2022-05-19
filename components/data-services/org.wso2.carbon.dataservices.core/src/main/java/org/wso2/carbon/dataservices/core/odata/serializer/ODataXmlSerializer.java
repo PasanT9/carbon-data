@@ -57,8 +57,6 @@ import org.apache.olingo.server.api.uri.queryoption.ExpandItem;
 import org.apache.olingo.server.api.uri.queryoption.ExpandOption;
 import org.apache.olingo.server.api.uri.queryoption.LevelsExpandOption;
 import org.apache.olingo.server.api.uri.queryoption.SelectOption;
-import org.apache.olingo.server.core.ODataWritableContent;
-import org.apache.olingo.server.core.serializer.AbstractODataSerializer;
 import org.apache.olingo.server.core.serializer.SerializerResultImpl;
 import org.apache.olingo.server.core.serializer.utils.CircleStreamBuffer;
 import org.apache.olingo.server.core.serializer.utils.ContextURLBuilder;
@@ -68,7 +66,7 @@ import org.apache.olingo.server.core.serializer.xml.ServiceDocumentXmlSerializer
 import org.apache.olingo.server.core.uri.UriHelperImpl;
 import org.apache.olingo.server.core.uri.queryoption.ExpandOptionImpl;
 
-public class MyODataXmlSerializer extends MyAbstractMyODataSerializer {
+public class ODataXmlSerializer extends AbstractODataSerializer {
     private static final String ATOM = "a";
     private static final String NS_ATOM = "http://www.w3.org/2005/Atom";
     private static final String METADATA = "m";
@@ -76,7 +74,7 @@ public class MyODataXmlSerializer extends MyAbstractMyODataSerializer {
     private static final String DATA = "d";
     private static final String NS_DATA = "http://docs.oasis-open.org/odata/ns/data";
 
-    public MyODataXmlSerializer() {
+    public ODataXmlSerializer() {
     }
 
     public SerializerResult serviceDocument(ServiceMetadata metadata, String serviceRoot) throws SerializerException {
@@ -309,7 +307,7 @@ public class MyODataXmlSerializer extends MyAbstractMyODataSerializer {
     }
 
     public SerializerStreamResult entityCollectionStreamed(ServiceMetadata metadata, EdmEntityType entityType, EntityIterator entities, EntityCollectionSerializerOptions options) throws SerializerException {
-        return MyODataWritableContent.with(entities, entityType, this, metadata, options).build();
+        return ODataWritableContent.with(entities, entityType, this, metadata, options).build();
     }
 
     public SerializerResult entity(ServiceMetadata metadata, EdmEntityType entityType, Entity entity, EntitySerializerOptions options) throws SerializerException {
