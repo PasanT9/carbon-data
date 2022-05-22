@@ -254,7 +254,6 @@ public class ODataAdapter implements ServiceHandler {
                     }
                 } else {
 
-
                     iterator = getEntityIterator(edmEntitySet, baseURL, queryOptions);
 
                 }
@@ -264,7 +263,7 @@ public class ODataAdapter implements ServiceHandler {
             // handle navigation.
             if (!request.getNavigations().isEmpty() && entity != null) {
                 for (UriResourceNavigation nav : request.getNavigations()) {
-                    if (nav.isCollection()) {
+                    if (!nav.isCollection()) {
 
                         edmEntitySet =  getNavigationTargetEntitySet(edmEntitySet, nav.getProperty());
 
@@ -275,10 +274,9 @@ public class ODataAdapter implements ServiceHandler {
 
                         iterator = getNavigableEntityIterator(edmEntitySet, this.serviceMetadata, entity, nav.getProperty(), baseURL, queryOptions);
 
-
                     } else {
-                        parentEntity = entity;
-                        entity = getNavigableEntity(serviceMetadata, parentEntity, nav.getProperty(), baseURL);
+//                        parentEntity = entity;
+//                        entity = getNavigableEntity(serviceMetadata, parentEntity, nav.getProperty(), baseURL);
                     }
 
                     entityType = nav.getProperty().getType();
@@ -1217,6 +1215,7 @@ public class ODataAdapter implements ServiceHandler {
                 Entity entity = new Entity();
                 for (DataColumn column : this.dataHandler.getTableMetadata().get(tableName).values()) {
                     String columnName = column.getColumnName();
+                    entity.getProperty("");
                     entity.addProperty(createPrimitive(column.getColumnType(), columnName, entry.getValue(columnName)));
                 }
                 //Set ETag to the entity
@@ -1285,7 +1284,7 @@ public class ODataAdapter implements ServiceHandler {
 
                             List<ODataEntry> entries = null;
                             if(queryOptions.getOrderByOption() != null){
-                                entries = oDataAdapter.dataHandler.StreamTableWithOrder(tableName, queryOptions.getOrderByOption());
+                                entries = oDataAdapter.dataHandler.StreamTableWithOrder(tableName, queryOptions.getOrderByOption(), edmEntitySet);
                             }
                             else if(this.getProperties() != null) {
                                 entries = oDataAdapter.dataHandler.streamTableWithKeys(tableName, this.getProperties());
@@ -1298,6 +1297,7 @@ public class ODataAdapter implements ServiceHandler {
                                 Entity entity = new Entity();
                                 for (DataColumn column : oDataAdapter.dataHandler.getTableMetadata().get(tableName).values()) {
                                     String columnName = column.getColumnName();
+                                    //entity.getProperty()
                                     entity.addProperty(createPrimitive(column.getColumnType(), columnName, entries.get(i).getValue(columnName)));
                                 }
                                 //Set ETag to the entity

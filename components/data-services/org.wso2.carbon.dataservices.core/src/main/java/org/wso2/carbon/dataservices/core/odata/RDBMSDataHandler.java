@@ -22,6 +22,7 @@ import org.apache.axis2.databinding.utils.ConverterUtil;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.server.api.uri.queryoption.OrderByItem;
 import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
 import org.wso2.carbon.dataservices.common.DBConstants;
@@ -472,7 +473,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
         }
     }
 
-    public List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault {
+    public List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption, EdmEntitySet edmEntitySet) throws ODataServiceFault {
         ResultSet resultSet = null;
         Connection connection = null;
         PreparedStatement statement = null;

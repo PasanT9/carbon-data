@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.mongodb.util.JSON;
+import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.server.api.uri.queryoption.OrderByItem;
 import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
 import org.bson.BSONObject;
@@ -185,12 +186,12 @@ public class MongoDataHandler implements ODataDataHandler {
     public List<ODataEntry> streamTable(String tableName) throws ODataServiceFault {
         List<ODataEntry> entryList = new ArrayList<>();
         DBCollection readResult = jongo.getDatabase().getCollection(tableName);
-        Iterator<DBObject> cursor = readResult.find().skip(this.currentEntity).limit(this.EntityCount);
+        Iterator<DBObject> iterator = readResult.find().skip(this.currentEntity).limit(this.EntityCount);
         DBObject documentData;
         String tempValue;
-        while (cursor.hasNext()) {
+        while (iterator.hasNext()) {
             ODataEntry dataEntry;
-            documentData = cursor.next();
+            documentData = iterator.next();
             tempValue = documentData.toString();
             Iterator<?> keys = new JSONObject(tempValue).keys();
             dataEntry = createDataEntryFromResult(tempValue, keys);
@@ -203,40 +204,24 @@ public class MongoDataHandler implements ODataDataHandler {
     }
 
     public List<ODataEntry> streamTableWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
-        List<ODataEntry> entryList = new ArrayList<>();
-        ODataEntry dataEntry;
-        for (String keyName : keys.getData().keySet()) {
-            String keyValue = keys.getValue(keyName);
-            String projectionResult = jongo.getCollection(tableName).findOne(new ObjectId(keyValue)).
-                    map(MongoQuery.MongoResultMapper.getInstance());
-            if (projectionResult == null) {
-                throw new ODataServiceFault(DOCUMENT_ID + keyValue + " does not exist in collection: "
-                        + tableName + " .");
-            }
-            Iterator<?> key = new JSONObject(projectionResult).keys();
-            dataEntry = createDataEntryFromResult(projectionResult, key);
-            //Set Etag to the entity
-            dataEntry.addValue(ETAG, ODataUtils.generateETag(this.configId, tableName, dataEntry));
-            entryList.add(dataEntry);
-        }
-        return entryList;
+        throw new ODataServiceFault("MongoDB datasources doesn't support navigation.");
     }
 
     public void initStreaming() {
         this.currentEntity = 0;
     }
 
-    public List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault {
+    public List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption, EdmEntitySet edmEntitySet) throws ODataServiceFault {
         List<ODataEntry> entryList = new ArrayList<>();
         DBCollection readResult = jongo.getDatabase().getCollection(tableName);
         BasicDBObject orderBy = getOrderByStatement(orderByOption);
         //DBObject object = (DBObject) JSON.parse(orderBy.toString());
-        Iterator<DBObject> cursor = readResult.find().sort(orderBy).skip(this.currentEntity).limit(this.EntityCount);
+        Iterator<DBObject> iterator = readResult.find().sort(orderBy).skip(this.currentEntity).limit(this.EntityCount);
         DBObject documentData;
         String tempValue;
-        while (cursor.hasNext()) {
+        while (iterator.hasNext()) {
             ODataEntry dataEntry;
-            documentData = cursor.next();
+            documentData = iterator.next();
             tempValue = documentData.toString();
             Iterator<?> keys = new JSONObject(tempValue).keys();
             dataEntry = createDataEntryFromResult(tempValue, keys);
@@ -525,23 +510,6 @@ public class MongoDataHandler implements ODataDataHandler {
 
     @Override
     public int getRowCountWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
-        List<ODataEntry> entryList = new ArrayList<>();
-        ODataEntry dataEntry;
-        for (String keyName : keys.getData().keySet()) {
-            String keyValue = keys.getValue(keyName);
-            String projectionResult = jongo.getCollection(tableName).findOne(new ObjectId(keyValue)).
-                    map(MongoQuery.MongoResultMapper.getInstance());
-            if (projectionResult == null) {
-                throw new ODataServiceFault(DOCUMENT_ID + keyValue + " does not exist in collection: "
-                        + tableName + " .");
-            }
-            Iterator<?> key = new JSONObject(projectionResult).keys();
-            dataEntry = createDataEntryFromResult(projectionResult, key);
-            //Set Etag to the entity
-            dataEntry.addValue(ETAG, ODataUtils.generateETag(this.configId, tableName, dataEntry));
-            entryList.add(dataEntry);
-        }
-//        return entryList;
-        return entryList.size();
+        throw new ODataServiceFault("MongoDB datasources doesn't support navigation.");
     }
 }   
