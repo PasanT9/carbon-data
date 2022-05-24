@@ -473,7 +473,8 @@ public class RDBMSDataHandler implements ODataDataHandler {
         }
     }
 
-    public List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption, EdmEntitySet edmEntitySet) throws ODataServiceFault {
+    public List<ODataEntry> StreamTableWithOrder(EdmEntitySet edmEntitySet, OrderByOption orderByOption) throws ODataServiceFault {
+        String tableName = edmEntitySet.getName();
         ResultSet resultSet = null;
         Connection connection = null;
         PreparedStatement statement = null;
@@ -502,7 +503,9 @@ public class RDBMSDataHandler implements ODataDataHandler {
                     orderBy += ", ";
                 }
                 final OrderByItem item = orderByOption.getOrders().get(i);
-                orderBy += item.getExpression();
+                String expression = String.valueOf(item.getExpression()).replaceAll("\\[", "(").replaceAll("\\]",")").replaceAll("[\\{\\}]","");
+                orderBy += expression;
+                //orderBy += item.getExpression();
                 if(item.isDescending()) {
                     orderBy += " desc";
                 }
@@ -514,7 +517,6 @@ public class RDBMSDataHandler implements ODataDataHandler {
         catch(Exception e) {
             e.printStackTrace();
         }
-        orderBy = orderBy.replaceAll("[\\[\\]]","");
         return orderBy;
     }
 

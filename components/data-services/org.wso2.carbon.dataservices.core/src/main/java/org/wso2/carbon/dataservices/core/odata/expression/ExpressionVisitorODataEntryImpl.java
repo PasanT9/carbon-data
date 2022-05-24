@@ -44,11 +44,14 @@ import java.util.*;
 public class ExpressionVisitorODataEntryImpl implements ExpressionVisitor<VisitorOperand> {
 
     final private ODataEntry entity;
-    final Collection<DataColumn> tableMetaData;
+    static private Collection<DataColumn> tableMetaData;
 
-    public ExpressionVisitorODataEntryImpl(final ODataEntry entity, final EdmBindingTarget bindingTarget, Collection<DataColumn> tableMetaData) {
+    public ExpressionVisitorODataEntryImpl(final ODataEntry entity, final EdmBindingTarget bindingTarget) {
         this.entity = entity;
-        this.tableMetaData = tableMetaData;
+    }
+
+    public static void setTableMetaData(Collection<DataColumn> tableMetaData) {
+        ExpressionVisitorODataEntryImpl.tableMetaData = tableMetaData;
     }
 
     @Override
@@ -172,20 +175,7 @@ public class ExpressionVisitorODataEntryImpl implements ExpressionVisitor<Visito
         int size = uriResourceParts.size();
         if (uriResourceParts.get(0) instanceof UriResourceProperty) {
             EdmProperty currentEdmProperty = ((UriResourceProperty) uriResourceParts.get(0)).getProperty();
-            Property currentProperty = null;
-            for (DataColumn column : this.tableMetaData) {
-                String columnName = column.getColumnName();
-                try {
-                    Property temp = createPrimitive(column.getColumnType(), columnName, this.entity.getValue(columnName));
-                    if(temp.getName().equals(currentEdmProperty.getName())) {
-                        currentProperty = temp;
-                        break;
-                    }
-                }
-                catch (ParseException | ODataServiceFault e){
-                    e.printStackTrace();
-                }
-            }
+            Property currentProperty = getProperty(currentEdmProperty);
             return new TypedOperand(currentProperty.getValue(), currentEdmProperty.getType(), currentEdmProperty);
         } else if (uriResourceParts.get(size - 1) instanceof UriResourceLambdaAll) {
             return throwNotImplemented();
@@ -196,171 +186,21 @@ public class ExpressionVisitorODataEntryImpl implements ExpressionVisitor<Visito
         }
     }
 
-    private Property createPrimitive(final DataColumn.ODataDataType columnType, final String name,
-                                     final String paramValue) throws ODataServiceFault, ParseException {
-        String propertyType;
-        Object value;
-        switch (columnType) {
-            case INT32:
-                propertyType = EdmPrimitiveTypeKind.Int32.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToInt(paramValue);
-                break;
-            case INT16:
-                propertyType = EdmPrimitiveTypeKind.Int16.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToShort(paramValue);
-                break;
-            case DOUBLE:
-                propertyType = EdmPrimitiveTypeKind.Double.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToDouble(paramValue);
-                break;
-            case STRING:
-                propertyType = EdmPrimitiveTypeKind.String.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case BOOLEAN:
-                propertyType = EdmPrimitiveTypeKind.Boolean.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToBoolean(paramValue);
-                break;
-            case BINARY:
-                propertyType = EdmPrimitiveTypeKind.Binary.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : getBytesFromBase64String(paramValue);
-                break;
-            case BYTE:
-                propertyType = EdmPrimitiveTypeKind.Byte.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case SBYTE:
-                propertyType = EdmPrimitiveTypeKind.SByte.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case DATE:
-                propertyType = EdmPrimitiveTypeKind.Date.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = ConverterUtil.convertToDate(paramValue);
-                break;
-            case DURATION:
-                propertyType = EdmPrimitiveTypeKind.Duration.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case DECIMAL:
-                propertyType = EdmPrimitiveTypeKind.Decimal.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToBigDecimal(paramValue);
-                break;
-            case SINGLE:
-                propertyType = EdmPrimitiveTypeKind.Single.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToFloat(paramValue);
-                break;
-            case TIMEOFDAY:
-                propertyType = EdmPrimitiveTypeKind.TimeOfDay.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToTime(paramValue).getAsCalendar();
-                break;
-            case INT64:
-                propertyType = EdmPrimitiveTypeKind.Int64.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToLong(paramValue);
-                break;
-            case DATE_TIMEOFFSET:
-                propertyType = EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = ConverterUtil.convertToDateTime(paramValue);
-                break;
-            case GUID:
-                propertyType = EdmPrimitiveTypeKind.Guid.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = UUID.fromString(paramValue);
-                break;
-            case STREAM:
-                propertyType = EdmPrimitiveTypeKind.Stream.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY:
-                propertyType = EdmPrimitiveTypeKind.Geography.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_POINT:
-                propertyType = EdmPrimitiveTypeKind.GeographyPoint.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_LINE_STRING:
-                propertyType = EdmPrimitiveTypeKind.GeographyLineString.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_POLYGON:
-                propertyType = EdmPrimitiveTypeKind.GeographyPolygon.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_MULTIPOINT:
-                propertyType = EdmPrimitiveTypeKind.GeographyMultiPoint.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_MULTILINE_STRING:
-                propertyType = EdmPrimitiveTypeKind.GeographyMultiLineString.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_MULTIPOLYGON:
-                propertyType = EdmPrimitiveTypeKind.GeographyMultiPolygon.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_COLLECTION:
-                propertyType = EdmPrimitiveTypeKind.GeographyCollection.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY:
-                propertyType = EdmPrimitiveTypeKind.Geometry.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_POINT:
-                propertyType = EdmPrimitiveTypeKind.GeometryPoint.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_LINE_STRING:
-                propertyType = EdmPrimitiveTypeKind.GeometryLineString.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_POLYGON:
-                propertyType = EdmPrimitiveTypeKind.GeometryPolygon.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_MULTIPOINT:
-                propertyType = EdmPrimitiveTypeKind.GeometryMultiPoint.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_MULTILINE_STRING:
-                propertyType = EdmPrimitiveTypeKind.GeographyMultiLineString.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_MULTIPOLYGON:
-                propertyType = EdmPrimitiveTypeKind.GeometryMultiPolygon.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_COLLECTION:
-                propertyType = EdmPrimitiveTypeKind.GeometryCollection.getFullQualifiedName()
-                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            default:
-                propertyType = EdmPrimitiveTypeKind.String.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
+    private Property getProperty(EdmProperty edmProperty) {
+        Property currentProperty = null;
+        for (DataColumn column : this.tableMetaData) {
+            String columnName = column.getColumnName();
+            try {
+                if(columnName.equals(edmProperty.getName())) {
+                    currentProperty = ODataAdapter.createPrimitive(column.getColumnType(), columnName, this.entity.getValue(columnName));
+                    break;
+                }
+            }
+            catch (ParseException | ODataServiceFault e){
+                e.printStackTrace();
+            }
         }
-        return new Property(propertyType, name, ValueType.PRIMITIVE, value);
-    }
-
-    private byte[] getBytesFromBase64String(String base64Str) throws ODataServiceFault {
-        try {
-            return Base64.decodeBase64(base64Str.getBytes(DBConstants.DEFAULT_CHAR_SET_TYPE));
-        } catch (Exception e) {
-            throw new ODataServiceFault(e.getMessage());
-        }
+        return currentProperty;
     }
 
     @Override

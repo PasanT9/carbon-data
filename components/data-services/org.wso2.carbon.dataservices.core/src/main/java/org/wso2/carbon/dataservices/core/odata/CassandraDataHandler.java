@@ -140,19 +140,18 @@ public class CassandraDataHandler implements ODataDataHandler {
 
         List<ODataEntry> entryList = new ArrayList<>();
 
-        if(!this.streamResultSet.isFullyFetched()){
-            ColumnDefinitions columnDefinitions = this.streamResultSet.getColumnDefinitions();
-            Iterator<Row> iterator = this.streamResultSet.iterator();
-            int count = 0;
-            while (iterator.hasNext()) {
-                ODataEntry dataEntry = createDataEntryFromRow(tableName, iterator.next(), columnDefinitions);
-                entryList.add(dataEntry);
-                count++;
-                if(count >= this.EntityCount) {
-                    break;
-                }
+        ColumnDefinitions columnDefinitions = this.streamResultSet.getColumnDefinitions();
+        Iterator<Row> iterator = this.streamResultSet.iterator();
+        int count = 0;
+        while (iterator.hasNext()) {
+            ODataEntry dataEntry = createDataEntryFromRow(tableName, iterator.next(), columnDefinitions);
+            entryList.add(dataEntry);
+            count++;
+            if(count >= this.EntityCount) {
+                break;
             }
         }
+
         return entryList;
     }
 
@@ -165,8 +164,9 @@ public class CassandraDataHandler implements ODataDataHandler {
         this.entryList = null;
     }
 
-    public List<ODataEntry> StreamTableWithOrder(final String tableName, final OrderByOption orderByOption, EdmEntitySet edmEntitySet) throws ODataServiceFault {
+    public List<ODataEntry> StreamTableWithOrder(EdmEntitySet edmEntitySet, OrderByOption orderByOption) throws ODataServiceFault {
 
+        String tableName = edmEntitySet.getName();
         if(this.entryList == null) {
             this.entryList = new ArrayList<>();
 
@@ -180,50 +180,8 @@ public class CassandraDataHandler implements ODataDataHandler {
                 this.entryList.add(dataEntry);
             }
 
-           // final EdmEntitySet edmBindingTarget = edmEntitySet;
-           // final order
-            final EdmBindingTarget edmBindingTarget = edmEntitySet;
-            Collections.sort(this.entryList, new Comparator<ODataEntry>() {
-                @Override
-                @SuppressWarnings({ "unchecked", "rawtypes" })
-                public int compare(final ODataEntry e1, final ODataEntry e2) {
-                    // Evaluate the first order option for both entity
-                    // If and only if the result of the previous order option is equals to 0
-                    // evaluate the next order option until all options are evaluated or they are not equals
-                    int result = 0;
-                    for (int i = 0; i < orderByOption.getOrders().size() && result == 0; i++) {
-                        try {
-                            final OrderByItem item = orderByOption.getOrders().get(i);
-                            final TypedOperand op1 = item.getExpression()
-                                    .accept(new ExpressionVisitorODataEntryImpl(e1, edmBindingTarget, getTableMetadata().get(tableName).values()))
-                                    .asTypedOperand();
-                            final TypedOperand op2 = item.getExpression()
-                                    .accept(new ExpressionVisitorODataEntryImpl(e2, edmBindingTarget, getTableMetadata().get(tableName).values()))
-                                    .asTypedOperand();
-                            if (op1.isNull() || op2.isNull()) {
-                                if (op1.isNull() && op2.isNull()) {
-                                    result = 0; // null is equals to null
-                                } else {
-                                    result = op1.isNull() ? -1 : 1;
-                                }
-                            } else {
-                                Object o1 = op1.getValue();
-                                Object o2 = op2.getValue();
+            sortEntitySet(orderByOption, edmEntitySet);
 
-                                if (o1.getClass() == o2.getClass() && o1 instanceof Comparable) {
-                                    result = ((Comparable) o1).compareTo(o2);
-                                } else {
-                                    result = 0;
-                                }
-                            }
-                            result = item.isDescending() ? result * -1 : result;
-                        } catch (ExpressionVisitException | ODataApplicationException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
-                    return result;
-                }
-            });
         }
 
         List<ODataEntry> resultSet = new ArrayList<>();
@@ -238,9 +196,55 @@ public class CassandraDataHandler implements ODataDataHandler {
                 break;
             }
         }
-        
 
         return resultSet;
+    }
+
+    private void sortEntitySet(final OrderByOption orderByOption, final EdmBindingTarget edmBindingTarget) {
+
+        ExpressionVisitorODataEntryImpl.setTableMetaData(this.getTableMetadata().get(edmBindingTarget.getName()).values());
+
+        Collections.sort(this.entryList, new Comparator<ODataEntry>() {
+            @Override
+            @SuppressWarnings({ "unchecked", "rawtypes" })
+            public int compare(final ODataEntry e1, final ODataEntry e2) {
+                // Evaluate the first order option for both entity
+                // If and only if the result of the previous order option is equals to 0
+                // evaluate the next order option until all options are evaluated or they are not equals
+                int result = 0;
+                for (int i = 0; i < orderByOption.getOrders().size() && result == 0; i++) {
+                    try {
+                        final OrderByItem item = orderByOption.getOrders().get(i);
+                        final TypedOperand op1 = item.getExpression()
+                                .accept(new ExpressionVisitorODataEntryImpl(e1, edmBindingTarget))
+                                .asTypedOperand();
+                        final TypedOperand op2 = item.getExpression()
+                                .accept(new ExpressionVisitorODataEntryImpl(e2, edmBindingTarget))
+                                .asTypedOperand();
+                        if (op1.isNull() || op2.isNull()) {
+                            if (op1.isNull() && op2.isNull()) {
+                                result = 0; // null is equals to null
+                            } else {
+                                result = op1.isNull() ? -1 : 1;
+                            }
+                        } else {
+                            Object o1 = op1.getValue();
+                            Object o2 = op2.getValue();
+
+                            if (o1.getClass() == o2.getClass() && o1 instanceof Comparable) {
+                                result = ((Comparable) o1).compareTo(o2);
+                            } else {
+                                result = 0;
+                            }
+                        }
+                        result = item.isDescending() ? result * -1 : result;
+                    } catch (ExpressionVisitException | ODataApplicationException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                return result;
+            }
+        });
     }
 
     @Override

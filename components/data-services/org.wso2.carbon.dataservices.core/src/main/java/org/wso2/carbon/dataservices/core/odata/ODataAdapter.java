@@ -263,7 +263,7 @@ public class ODataAdapter implements ServiceHandler {
             // handle navigation.
             if (!request.getNavigations().isEmpty() && entity != null) {
                 for (UriResourceNavigation nav : request.getNavigations()) {
-                    if (!nav.isCollection()) {
+                    if (nav.isCollection()) {
 
                         edmEntitySet =  getNavigationTargetEntitySet(edmEntitySet, nav.getProperty());
 
@@ -275,8 +275,8 @@ public class ODataAdapter implements ServiceHandler {
                         iterator = getNavigableEntityIterator(edmEntitySet, this.serviceMetadata, entity, nav.getProperty(), baseURL, queryOptions);
 
                     } else {
-//                        parentEntity = entity;
-//                        entity = getNavigableEntity(serviceMetadata, parentEntity, nav.getProperty(), baseURL);
+                        parentEntity = entity;
+                        entity = getNavigableEntity(serviceMetadata, parentEntity, nav.getProperty(), baseURL);
                     }
 
                     entityType = nav.getProperty().getType();
@@ -1284,7 +1284,7 @@ public class ODataAdapter implements ServiceHandler {
 
                             List<ODataEntry> entries = null;
                             if(queryOptions.getOrderByOption() != null){
-                                entries = oDataAdapter.dataHandler.StreamTableWithOrder(tableName, queryOptions.getOrderByOption(), edmEntitySet);
+                                entries = oDataAdapter.dataHandler.StreamTableWithOrder(edmEntitySet, queryOptions.getOrderByOption());
                             }
                             else if(this.getProperties() != null) {
                                 entries = oDataAdapter.dataHandler.streamTableWithKeys(tableName, this.getProperties());
@@ -1586,7 +1586,7 @@ public class ODataAdapter implements ServiceHandler {
         return this.edmProvider;
     }
 
-    private byte[] getBytesFromBase64String(String base64Str) throws ODataServiceFault {
+    public static byte[] getBytesFromBase64String(String base64Str) throws ODataServiceFault {
         try {
             return Base64.decodeBase64(base64Str.getBytes(DBConstants.DEFAULT_CHAR_SET_TYPE));
         } catch (Exception e) {
@@ -2190,8 +2190,8 @@ public class ODataAdapter implements ServiceHandler {
      * @see Types
      * @see Property
      */
-    private Property createPrimitive(final DataColumn.ODataDataType columnType, final String name,
-                                     final String paramValue) throws ODataServiceFault, ParseException {
+    public static Property createPrimitive(final DataColumn.ODataDataType columnType, final String name,
+                                           final String paramValue) throws ODataServiceFault, ParseException {
         String propertyType;
         Object value;
         switch (columnType) {

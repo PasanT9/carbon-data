@@ -45,7 +45,7 @@ public interface ODataDataHandler {
 
     List<ODataEntry> streamTableWithKeys(String tableName, ODataEntry keys)  throws ODataServiceFault ;
 
-    List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption, EdmEntitySet edmEntitySet) throws ODataServiceFault;
+    List<ODataEntry> StreamTableWithOrder(EdmEntitySet edmEntitySet, OrderByOption orderByOption) throws ODataServiceFault;
 
     void initStreaming();
 

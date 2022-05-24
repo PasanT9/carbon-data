@@ -34,6 +34,7 @@ import org.bson.BSONObject;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.jongo.Jongo;
+import org.jongo.QueryModifier;
 import org.json.JSONObject;
 import org.wso2.carbon.dataservices.core.description.query.MongoQuery;
 import org.wso2.carbon.dataservices.core.engine.DataEntry;
@@ -68,7 +69,7 @@ public class MongoDataHandler implements ODataDataHandler {
     private static final String ETAG = "ETag";
     private static final String DOCUMENT_ID = "_id";
 
-    private final int EntityCount = 3;
+    private final int EntityCount = 5000;
 
     private int currentEntity;
 
@@ -211,12 +212,37 @@ public class MongoDataHandler implements ODataDataHandler {
         this.currentEntity = 0;
     }
 
-    public List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption, EdmEntitySet edmEntitySet) throws ODataServiceFault {
+    public List<ODataEntry> StreamTableWithOrder(EdmEntitySet edmEntitySet, OrderByOption orderByOption) throws ODataServiceFault {
+        String tableName = edmEntitySet.getName();
         List<ODataEntry> entryList = new ArrayList<>();
         DBCollection readResult = jongo.getDatabase().getCollection(tableName);
-        BasicDBObject orderBy = getOrderByStatement(orderByOption);
-        //DBObject object = (DBObject) JSON.parse(orderBy.toString());
-        Iterator<DBObject> iterator = readResult.find().sort(orderBy).skip(this.currentEntity).limit(this.EntityCount);
+//        //BasicDBObject orderBy = getOrderByStatement(orderByOption);
+
+
+        List<BasicDBObject> stages = getOrderByStatementNew(orderByOption);
+
+        BasicDBObject skip = new BasicDBObject();
+        skip.put("$skip", this.currentEntity);
+        stages.add(skip);
+
+        BasicDBObject limit = new BasicDBObject();
+        limit.put("$limit", this.EntityCount);
+        stages.add(limit);
+
+        AggregationOptions options = AggregationOptions.builder()
+                .outputMode(AggregationOptions.OutputMode.INLINE)
+                .build();
+
+        Iterator<DBObject> iterator = readResult.aggregate(stages, options);
+
+
+
+
+//        Iterator<DBObject> iterator = readResult.aggregate(addFields, orderBy).results().iterator();
+
+//        String query = readResult.find().sort(orderBy).skip(this.currentEntity).limit(this.EntityCount).getQuery().toString();
+
+        //Iterator<DBObject> iterator = readResult.find().sort(orderBy).skip(this.currentEntity).limit(this.EntityCount);
         DBObject documentData;
         String tempValue;
         while (iterator.hasNext()) {
@@ -233,6 +259,59 @@ public class MongoDataHandler implements ODataDataHandler {
         return entryList;
     }
 
+    private List<BasicDBObject> getOrderByStatementNew(OrderByOption orderByOption) {
+        List<BasicDBObject> stages = new ArrayList<>();
+//        BasicDBObject len = new BasicDBObject();
+//        len.put("$strLenCP", "$dept_name");
+
+        BasicDBObject sortList = new BasicDBObject();
+        BasicDBObject fieldList = new BasicDBObject();
+        try {
+            for (int i = 0; i < orderByOption.getOrders().size(); i++) {
+                final OrderByItem item = orderByOption.getOrders().get(i);
+                String expr = item.getExpression().toString().replaceAll("[\\[\\]]","").replaceAll("[\\{\\}]","");
+                String[] exprArr = expr.split(" ");
+
+                int order = 0;
+                if(item.isDescending()) {
+                    order = -1;
+                }
+                else {
+                    order = 1;
+                }
+
+                if(exprArr.length == 1){
+                    sortList.put(exprArr[0], order);
+                }
+                else if(exprArr.length == 2) {
+                    BasicDBObject length = new BasicDBObject();
+                    length.put("$strLenCP", "$"+exprArr[1]);
+
+                    fieldList.put(exprArr[1]+"Len", length);
+                    sortList.put(exprArr[1]+"Len", order);
+                }
+
+                //String expression = String.valueOf(item.getExpression()).replaceAll("\\[", "(").replaceAll("\\]",")").replaceAll("[\\{\\}]","");
+                //String col = item.getExpression().toString().replaceAll("[\\[\\]]","");
+                //String expression = "{ $strLenCP: \"$dept_name\" }";
+                //orderBy.put(expression, order);
+            }
+        }
+        catch(Exception e) {
+            e.printStackTrace();
+        }
+        BasicDBObject addFields = new BasicDBObject();
+        addFields.put("$addFields", fieldList);
+
+        BasicDBObject sort = new BasicDBObject();
+        sort.put("$sort", sortList);
+
+        stages.add(addFields);
+        stages.add(sort);
+
+        return stages;
+    }
+
     private BasicDBObject getOrderByStatement(OrderByOption orderByOption) {
         BasicDBObject orderBy = new BasicDBObject();
         try {
@@ -245,8 +324,10 @@ public class MongoDataHandler implements ODataDataHandler {
                 else {
                     order = 1;
                 }
+                //String expression = String.valueOf(item.getExpression()).replaceAll("\\[", "(").replaceAll("\\]",")").replaceAll("[\\{\\}]","");
                 String col = item.getExpression().toString().replaceAll("[\\[\\]]","");
-                orderBy.put(col, order);
+                String expression = "{ $strLenCP: \"$dept_name\" }";
+                orderBy.put(expression, order);
             }
         }
         catch(Exception e) {
