@@ -201,6 +201,8 @@ public class ODataAdapter implements ServiceHandler {
         CountOption countOption;
 
         SelectOption selectOption;
+
+        boolean writeOnlyReference;
     }
 
     /**
@@ -229,7 +231,7 @@ public class ODataAdapter implements ServiceHandler {
         TopOption topOption = uriInfo.getTopOption();
         SkipTokenOption skipTokenOption = uriInfo.getSkipTokenOption();
         SelectOption selectOption = uriInfo.getSelectOption();
-
+        
         QueryOptions queryOptions = new QueryOptions(expandOption, filterOption, countOption, skipOption, topOption, orderByOption, skipTokenOption);
 
         try {
@@ -291,6 +293,7 @@ public class ODataAdapter implements ServiceHandler {
             details.entitySet = entitySet;
             details.entityType = entityType;
             details.iterator = iterator;
+            details.writeOnlyReference = request.isReferenceRequest();
             // According to the odatav4 spec we have to perform these queries according to the following order
 //            if (filterOption != null) {
 //                QueryHandler.applyFilterSystemQuery(filterOption, details.entitySet, edmEntitySet);
@@ -512,7 +515,7 @@ public class ODataAdapter implements ServiceHandler {
 
                     opts = EntityCollectionSerializerOptions.with().id(id)
                             .writeContentErrorCallback(errorCallback)
-                            .contextURL(contextUrl).expand(details.expandOption).count(details.countOption).select(details.selectOption).build();
+                            .contextURL(contextUrl).expand(details.expandOption).count(details.countOption).select(details.selectOption).writeOnlyReferences(details.writeOnlyReference).build();
 
                     SerializerStreamResult serializerResult = serializer.entityCollectionStreamed(edm,
                             details.edmEntitySet.getEntityType(), details.iterator, opts);
