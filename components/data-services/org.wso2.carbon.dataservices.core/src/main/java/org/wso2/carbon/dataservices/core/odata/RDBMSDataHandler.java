@@ -22,7 +22,6 @@ import org.apache.axis2.databinding.utils.ConverterUtil;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.server.api.uri.queryoption.OrderByItem;
 import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
 import org.wso2.carbon.dataservices.common.DBConstants;
@@ -79,10 +78,20 @@ public class RDBMSDataHandler implements ODataDataHandler {
      * Config ID.
      */
     private final String configID;
+    /**
+     * Preferred buffer size
+     */
+    private int bufferSize;
 
-    private final int EntityCount = 5000;
+    /**
+     * Default buffer size
+     */
+    private final int DEFAULT_BUFFER_SIZE = 1000;
 
-    private int currentEntity;
+    /**
+     * Number entities to skip during current read iteration
+     */
+    private int skipEntityCount;
 
     /**
      * RDBMS datasource.
@@ -119,7 +128,12 @@ public class RDBMSDataHandler implements ODataDataHandler {
         this.tableList = generateTableList();
         this.configID = configId;
         this.rdbmsDataTypes = new HashMap<>(this.tableList.size());
+        this.setBufferSize();
         initializeMetaData();
+    }
+
+    public void setBufferSize() {
+        this.bufferSize = Integer.parseInt(System.getProperty("odataBufferSize", String.valueOf(DEFAULT_BUFFER_SIZE)));
     }
 
     @Override
@@ -398,10 +412,10 @@ public class RDBMSDataHandler implements ODataDataHandler {
     }
 
     public void initStreaming() {
-        this.currentEntity = 0;
+        this.skipEntityCount = 0;
     }
 
-    public int getRowCountWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
+    public int getEntityCountWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
         ResultSet resultSet = null;
         Connection connection = null;
         PreparedStatement statement = null;
@@ -432,7 +446,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
         }
     }
 
-    public int getRowCount(String tableName) throws ODataServiceFault {
+    public int getEntityCount(String tableName) throws ODataServiceFault {
         ResultSet resultSet = null;
         Connection connection = null;
         PreparedStatement statement = null;
@@ -459,10 +473,10 @@ public class RDBMSDataHandler implements ODataDataHandler {
         PreparedStatement statement = null;
         try {
             connection = initializeConnection();
-            String query = "select * from " + tableName + " limit " + this.currentEntity+","+this.EntityCount;
+            String query = "select * from " + tableName + " limit " + this.skipEntityCount +","+this.bufferSize;
             statement = connection.prepareStatement(query);
             resultSet = statement.executeQuery();
-            this.currentEntity += this.EntityCount;
+            this.skipEntityCount += this.bufferSize;
             return createDataEntryCollectionFromRS(tableName, resultSet);
         } catch (SQLException e) {
             throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
@@ -473,18 +487,17 @@ public class RDBMSDataHandler implements ODataDataHandler {
         }
     }
 
-    public List<ODataEntry> StreamTableWithOrder(EdmEntitySet edmEntitySet, OrderByOption orderByOption) throws ODataServiceFault {
-        String tableName = edmEntitySet.getName();
+    public List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault {
         ResultSet resultSet = null;
         Connection connection = null;
         PreparedStatement statement = null;
         try {
             connection = initializeConnection();
-            String orderBy = getOrderByStatement(orderByOption);
-            String query = "select * from " + tableName + " " + orderBy + " limit "  + this.currentEntity+","+this.EntityCount;
+            String orderBy = getSortStatement(orderByOption);
+            String query = "select * from " + tableName + " " + orderBy + " limit "  + this.skipEntityCount +","+this.bufferSize;
             statement = connection.prepareStatement(query);
             resultSet = statement.executeQuery();
-            this.currentEntity += this.EntityCount;
+            this.skipEntityCount += this.bufferSize;
             return createDataEntryCollectionFromRS(tableName, resultSet);
         } catch (SQLException e) {
             throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
@@ -495,7 +508,13 @@ public class RDBMSDataHandler implements ODataDataHandler {
         }
     }
 
-    private String getOrderByStatement(OrderByOption orderByOption) {
+    /**
+     * This method creates the sort statement for the query
+     *
+     * @param orderByOption List of keys to consider when sorting
+     * @return Sort statement
+     */
+    private String getSortStatement(OrderByOption orderByOption) {
         String orderBy = "order by ";
         try {
             for (int i = 0; i < orderByOption.getOrders().size(); i++) {
@@ -643,7 +662,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
         PreparedStatement statement = null;
         try {
             connection = initializeConnection();
-            String query = createReadSqlWithKeys(tableName, keys) + " limit " + this.currentEntity+","+this.EntityCount;
+            String query = createReadSqlWithKeys(tableName, keys) + " limit " + this.skipEntityCount +","+this.bufferSize;
             statement = connection.prepareStatement(query);
             int index = 1;
             for (String column : keys.getNames()) {
@@ -655,7 +674,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
                 }
             }
             resultSet = statement.executeQuery();
-            this.currentEntity += this.EntityCount;
+            this.skipEntityCount += this.bufferSize;
             return createDataEntryCollectionFromRS(tableName, resultSet);
         } catch (SQLException | ParseException e) {
             throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
@@ -1453,6 +1472,13 @@ public class RDBMSDataHandler implements ODataDataHandler {
         return sql.toString();
     }
 
+    /**
+     * This method creates SQL query to count the table with keys.
+     *
+     * @param tableName Name of the table
+     * @param keys      Keys
+     * @return sql Query
+     */
     private String createCountSqlWithKeys(String tableName, ODataEntry keys) {
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT count(*) as rowcount FROM ").append(tableName).append(" WHERE ");

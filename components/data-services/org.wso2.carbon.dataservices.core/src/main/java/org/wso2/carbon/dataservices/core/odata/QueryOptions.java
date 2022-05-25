@@ -21,16 +21,34 @@ public class QueryOptions {
 
     private SkipTokenOption skipTokenOption;
 
+    /**
+     * Keep count of the skipped entities
+     */
     private int skipCount;
 
+    /**
+     * Keep count of the processed entities
+     */
     private int topCount;
 
+    /**
+     * Keep count of the skipped entities for pagination
+     */
     private int skipTokenCount;
 
+    /**
+     * Number of entities to skip during pagination
+     */
     private int itemsToSkip;
 
+    /**
+     * Max size of a single page
+     */
     private int pageSize;
 
+    /**
+     * Link to the next page
+     */
     private URI nextLinkUri;
 
     public QueryOptions(ExpandOption expandOption, FilterOption filterOption, CountOption countOption, SkipOption skipOption, TopOption topOption, OrderByOption orderByOption, SkipTokenOption skipTokenOption) {
@@ -41,18 +59,6 @@ public class QueryOptions {
         this.topOption = topOption;
         this.orderByOption = orderByOption;
         this.skipTokenOption = skipTokenOption;
-
-        initCounts();
-    }
-
-    public QueryOptions() {
-        this.expandOption = null;
-        this.filterOption = null;
-        this.countOption = null;
-        this.skipOption = null;
-        this.topOption = null;
-        this.orderByOption = null;
-        this.skipTokenOption = null;
 
         initCounts();
     }
@@ -85,6 +91,9 @@ public class QueryOptions {
         return skipTokenOption;
     }
 
+    /**
+     * Initialize all counts to 0.
+     */
     private void initCounts() {
         this.skipCount = 0;
         this.skipTokenCount = 0;
@@ -131,18 +140,35 @@ public class QueryOptions {
         this.pageSize = pageSize;
     }
 
+    /**
+     * Increment skipCount by 1
+     */
     public void stepSkipCount() {
         this.setSkipCount(this.getSkipCount()+1);
     }
 
+    /**
+     * Increment topCount by 1
+     */
     public void stepTopCount() {
         this.setTopCount(this.getTopCount()+1);
     }
 
+    /**
+     * Increment skipTokenCount by 1
+     */
     public void stepSkipTokenCount() {
         this.setSkipTokenCount(this.getSkipTokenCount()+1);
     }
 
+    /**
+     * Initialize pagination
+     *
+     * Set page size
+     * Set current page
+     * Set link to the next page
+     *
+     */
     public void initPagination(int pageSize, String baseURL, String tableName) {
         this.setPageSize(pageSize);
 

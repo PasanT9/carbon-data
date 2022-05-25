@@ -21,28 +21,15 @@ package org.wso2.carbon.dataservices.core.odata;
 import com.datastax.driver.core.*;
 import org.apache.axis2.databinding.utils.ConverterUtil;
 import org.apache.commons.codec.binary.Base64;
-import org.apache.olingo.commons.api.data.Entity;
-import org.apache.olingo.commons.api.data.Property;
-import org.apache.olingo.commons.api.data.ValueType;
-import org.apache.olingo.commons.api.edm.EdmBindingTarget;
-import org.apache.olingo.commons.api.edm.EdmEntitySet;
-import org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind;
-import org.apache.olingo.server.api.ODataApplicationException;
-import org.apache.olingo.server.api.uri.queryoption.OrderByItem;
 import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
-import org.apache.olingo.server.api.uri.queryoption.expression.ExpressionVisitException;
 import org.wso2.carbon.dataservices.common.DBConstants;
 import org.wso2.carbon.dataservices.core.DBUtils;
 import org.wso2.carbon.dataservices.core.DataServiceFault;
 import org.wso2.carbon.dataservices.core.odata.DataColumn.ODataDataType;
-import org.wso2.carbon.dataservices.core.odata.expression.ExpressionVisitorImpl;
-import org.wso2.carbon.dataservices.core.odata.expression.ExpressionVisitorODataEntryImpl;
-import org.wso2.carbon.dataservices.core.odata.expression.operand.TypedOperand;
 
 import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
-import java.text.ParseException;
 import java.util.*;
 
 /**
@@ -77,15 +64,30 @@ public class CassandraDataHandler implements ODataDataHandler {
      */
     private final Session session;
 
+
     /**
      * Cassandra keyspace.
      */
     private final String keyspace;
 
-    private final int EntityCount = 5000;
+    /**
+     * Preferred buffer size
+     */
+    private int bufferSize;
 
+    /**
+     * Default buffer size
+     */
+    private final int DEFAULT_BUFFER_SIZE = 1000;
+
+    /**
+     * Store Result when pagination enabled
+     */
     private ResultSet streamResultSet;
 
+    /**
+     * List of table rows to sort
+     */
     private ArrayList<ODataEntry> entryList;
 
     private ThreadLocal<Boolean> transactionAvailable = new ThreadLocal<Boolean>() {
@@ -113,6 +115,11 @@ public class CassandraDataHandler implements ODataDataHandler {
         this.tableList = generateTableList();
         this.primaryKeys = generatePrimaryKeyList();
         this.tableMetaData = generateMetaData();
+        this.setBufferSize();
+    }
+
+    public void setBufferSize() {
+        this.bufferSize = Integer.parseInt(System.getProperty("odataBufferSize", String.valueOf(DEFAULT_BUFFER_SIZE)));
     }
 
     @Override
@@ -131,9 +138,11 @@ public class CassandraDataHandler implements ODataDataHandler {
 
     public List<ODataEntry> streamTable(String tableName) throws ODataServiceFault {
 
+        // Read table with pagination enabled
+        // Driver will only load the next page once all the rows of the current page is read.
         if(this.streamResultSet == null) {
             Statement statement = new SimpleStatement("Select * from " + this.keyspace + "." + tableName);
-            statement.setFetchSize(this.EntityCount);
+            statement.setFetchSize(this.bufferSize);
             this.streamResultSet = session.execute(statement);
             this.streamResultSet.fetchMoreResults();
         }
@@ -143,11 +152,14 @@ public class CassandraDataHandler implements ODataDataHandler {
         ColumnDefinitions columnDefinitions = this.streamResultSet.getColumnDefinitions();
         Iterator<Row> iterator = this.streamResultSet.iterator();
         int count = 0;
+
+        // Stream the results
+        // Pagination is handled by the driver
         while (iterator.hasNext()) {
             ODataEntry dataEntry = createDataEntryFromRow(tableName, iterator.next(), columnDefinitions);
             entryList.add(dataEntry);
             count++;
-            if(count >= this.EntityCount) {
+            if(count >= this.bufferSize) {
                 break;
             }
         }
@@ -164,9 +176,9 @@ public class CassandraDataHandler implements ODataDataHandler {
         this.entryList = null;
     }
 
-    public List<ODataEntry> StreamTableWithOrder(EdmEntitySet edmEntitySet, OrderByOption orderByOption) throws ODataServiceFault {
+    public List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault {
 
-        String tableName = edmEntitySet.getName();
+        // Read the entire table
         if(this.entryList == null) {
             this.entryList = new ArrayList<>();
 
@@ -180,71 +192,25 @@ public class CassandraDataHandler implements ODataDataHandler {
                 this.entryList.add(dataEntry);
             }
 
-            sortEntitySet(orderByOption, edmEntitySet);
+            QueryHandler.sortEntitySet(orderByOption, tableName, this.getTableMetadata(), this.entryList);
 
         }
 
         List<ODataEntry> resultSet = new ArrayList<>();
 
+        // Stream the stored results
         Iterator<ODataEntry> iterator = this.entryList.iterator();
         int count = 0;
         while (iterator.hasNext()) {
             resultSet.add(iterator.next());
             iterator.remove();
             count++;
-            if(count >= this.EntityCount) {
+            if(count >= this.bufferSize) {
                 break;
             }
         }
 
         return resultSet;
-    }
-
-    private void sortEntitySet(final OrderByOption orderByOption, final EdmBindingTarget edmBindingTarget) {
-
-        ExpressionVisitorODataEntryImpl.setTableMetaData(this.getTableMetadata().get(edmBindingTarget.getName()).values());
-
-        Collections.sort(this.entryList, new Comparator<ODataEntry>() {
-            @Override
-            @SuppressWarnings({ "unchecked", "rawtypes" })
-            public int compare(final ODataEntry e1, final ODataEntry e2) {
-                // Evaluate the first order option for both entity
-                // If and only if the result of the previous order option is equals to 0
-                // evaluate the next order option until all options are evaluated or they are not equals
-                int result = 0;
-                for (int i = 0; i < orderByOption.getOrders().size() && result == 0; i++) {
-                    try {
-                        final OrderByItem item = orderByOption.getOrders().get(i);
-                        final TypedOperand op1 = item.getExpression()
-                                .accept(new ExpressionVisitorODataEntryImpl(e1, edmBindingTarget))
-                                .asTypedOperand();
-                        final TypedOperand op2 = item.getExpression()
-                                .accept(new ExpressionVisitorODataEntryImpl(e2, edmBindingTarget))
-                                .asTypedOperand();
-                        if (op1.isNull() || op2.isNull()) {
-                            if (op1.isNull() && op2.isNull()) {
-                                result = 0; // null is equals to null
-                            } else {
-                                result = op1.isNull() ? -1 : 1;
-                            }
-                        } else {
-                            Object o1 = op1.getValue();
-                            Object o2 = op2.getValue();
-
-                            if (o1.getClass() == o2.getClass() && o1 instanceof Comparable) {
-                                result = ((Comparable) o1).compareTo(o2);
-                            } else {
-                                result = 0;
-                            }
-                        }
-                        result = item.isDescending() ? result * -1 : result;
-                    } catch (ExpressionVisitException | ODataApplicationException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-                return result;
-            }
-        });
     }
 
     @Override
@@ -466,7 +432,7 @@ public class CassandraDataHandler implements ODataDataHandler {
     }
 
     @Override
-    public int getRowCount(String tableName) throws ODataServiceFault {
+    public int getEntityCount(String tableName) throws ODataServiceFault {
         Statement statement = new SimpleStatement("Select count(*) as rowcount from " + this.keyspace + "." + tableName);
         ResultSet resultSet = this.session.execute(statement);
         int count = (int) resultSet.one().getLong("rowcount");
@@ -475,7 +441,7 @@ public class CassandraDataHandler implements ODataDataHandler {
     }
 
     @Override
-    public int getRowCountWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
+    public int getEntityCountWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
         throw new ODataServiceFault("Cassandra datasources doesn't support navigation.");
     }
 

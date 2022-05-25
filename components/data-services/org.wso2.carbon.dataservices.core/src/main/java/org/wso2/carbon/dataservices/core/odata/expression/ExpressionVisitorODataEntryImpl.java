@@ -46,7 +46,7 @@ public class ExpressionVisitorODataEntryImpl implements ExpressionVisitor<Visito
     final private ODataEntry entity;
     static private Collection<DataColumn> tableMetaData;
 
-    public ExpressionVisitorODataEntryImpl(final ODataEntry entity, final EdmBindingTarget bindingTarget) {
+    public ExpressionVisitorODataEntryImpl(final ODataEntry entity) {
         this.entity = entity;
     }
 

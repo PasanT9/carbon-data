@@ -33,15 +33,13 @@ import org.apache.olingo.server.api.uri.queryoption.SkipTokenOption;
 import org.apache.olingo.server.api.uri.queryoption.TopOption;
 import org.apache.olingo.server.api.uri.queryoption.expression.ExpressionVisitException;
 import org.wso2.carbon.dataservices.core.odata.expression.ExpressionVisitorImpl;
+import org.wso2.carbon.dataservices.core.odata.expression.ExpressionVisitorODataEntryImpl;
 import org.wso2.carbon.dataservices.core.odata.expression.operand.TypedOperand;
 import org.wso2.carbon.dataservices.core.odata.expression.operand.VisitorOperand;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.Locale;
+import java.util.*;
 
 public class QueryHandler {
 
@@ -233,18 +231,22 @@ public class QueryHandler {
     }
 
     /**
-     * This method applies order by option query to the given entity collection.
+     * This method applies order by option query to the given list of rows.
      *
-     * @param orderByOption    Order by option
-     * @param entitySet        Entity Set
-     * @param edmBindingTarget Binding Target
+     * @param orderByOption keys to consider when sorting
+     * @param tableName Name of the table
+     * @param tableMetaData Table Meta Data
+     * @param entryList List of rows
+     *
      */
-    public static void applyOrderByOption(final OrderByOption orderByOption, final EntityCollection entitySet,
-                                          final EdmBindingTarget edmBindingTarget) {
-        Collections.sort(entitySet.getEntities(), new Comparator<Entity>() {
+    public static void sortEntitySet(final OrderByOption orderByOption, String tableName, Map<String, Map<String, DataColumn>> tableMetaData, ArrayList<ODataEntry> entryList) {
+
+        ExpressionVisitorODataEntryImpl.setTableMetaData(tableMetaData.get(tableName).values());
+
+        Collections.sort(entryList, new Comparator<ODataEntry>() {
             @Override
             @SuppressWarnings({ "unchecked", "rawtypes" })
-            public int compare(final Entity e1, final Entity e2) {
+            public int compare(final ODataEntry e1, final ODataEntry e2) {
                 // Evaluate the first order option for both entity
                 // If and only if the result of the previous order option is equals to 0
                 // evaluate the next order option until all options are evaluated or they are not equals
@@ -253,11 +255,11 @@ public class QueryHandler {
                     try {
                         final OrderByItem item = orderByOption.getOrders().get(i);
                         final TypedOperand op1 = item.getExpression()
-                                                     .accept(new ExpressionVisitorImpl(e1, edmBindingTarget))
-                                                     .asTypedOperand();
+                                .accept(new ExpressionVisitorODataEntryImpl(e1))
+                                .asTypedOperand();
                         final TypedOperand op2 = item.getExpression()
-                                                     .accept(new ExpressionVisitorImpl(e2, edmBindingTarget))
-                                                     .asTypedOperand();
+                                .accept(new ExpressionVisitorODataEntryImpl(e2))
+                                .asTypedOperand();
                         if (op1.isNull() || op2.isNull()) {
                             if (op1.isNull() && op2.isNull()) {
                                 result = 0; // null is equals to null

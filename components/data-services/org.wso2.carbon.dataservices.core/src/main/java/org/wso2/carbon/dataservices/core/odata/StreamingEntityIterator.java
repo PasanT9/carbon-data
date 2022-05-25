@@ -4,7 +4,6 @@ import org.apache.olingo.commons.api.data.Entity;
 import org.apache.olingo.commons.api.data.EntityIterator;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
 
-import java.net.URI;
 import java.util.Iterator;
 import java.util.List;
 
@@ -12,21 +11,47 @@ import java.util.List;
 public class StreamingEntityIterator extends EntityIterator {
 
     private ODataAdapter adapter;
+
+    /**
+     * Container of the Entity Type
+     */
     private EdmEntitySet edmEntitySet;
+
+    /**
+     * Base URL of the request
+     */
     private String baseURL;
 
     public static Iterator<Entity> iterator;
 
+    /**
+     * List of entities
+     */
     private List<Entity> entityList;
 
+    /**
+     * OData navigation properties
+     */
     private ODataEntry properties;
 
+    /**
+     * Name of the table
+     */
     private String tableName;
 
-    public int EntityCount;
+    /**
+     * Number of processed entities
+     */
+    public int entityCount;
 
+    /**
+     * Number of entries
+     */
     public int rowCount;
 
+    /**
+     * OData query options
+     */
     private QueryOptions queryOptions;
 
     public StreamingEntityIterator(ODataAdapter adapter, EdmEntitySet edmEntitySet, String baseURL, Iterator<Entity> iterator, List<Entity> entityList, QueryOptions queryOptions, int rowCount, ODataEntry properties, String tableName) {
@@ -39,7 +64,7 @@ public class StreamingEntityIterator extends EntityIterator {
         this.rowCount = rowCount;
         this.tableName = tableName;
         this.properties = properties;
-        this.EntityCount = 0;
+        this.entityCount = 0;
 
         if(queryOptions != null && queryOptions.getSkipTokenOption() != null) {
             this.setNext(queryOptions.getNextLinkUri());
