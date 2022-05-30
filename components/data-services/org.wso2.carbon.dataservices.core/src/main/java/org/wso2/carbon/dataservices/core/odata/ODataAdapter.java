@@ -61,6 +61,7 @@ import org.apache.olingo.server.api.uri.UriResourceEntitySet;
 import org.apache.olingo.server.api.uri.UriResourceFunction;
 import org.apache.olingo.server.api.uri.UriResourceNavigation;
 import org.apache.olingo.server.api.uri.queryoption.*;
+import org.apache.olingo.server.api.uri.queryoption.expression.ExpressionVisitException;
 import org.apache.olingo.server.core.ContentNegotiatorException;
 import org.apache.olingo.server.core.ServiceHandler;
 import org.apache.olingo.server.core.requests.ActionRequest;
@@ -176,7 +177,7 @@ public class ODataAdapter implements ServiceHandler {
         response.writeMetadata();
     }
 
-    private static int getPageSize(final DataRequest request) {
+    private int getPageSize(final DataRequest request) {
 
         Integer preferredSize = request.getOdata().createPreferences(request.getODataRequest()
                 .getHeaders(HttpHeader.PREFER)).getMaxPageSize();
@@ -1308,23 +1309,18 @@ public class ODataAdapter implements ServiceHandler {
 
                             // Apply OData filter option
                             if(queryOptions.getFilterOption() != null){
-                                try {
-                                    final VisitorOperand operand =
-                                            queryOptions.getFilterOption().getExpression().accept(new ExpressionVisitorImpl(entity, edmEntitySet));
-                                    final TypedOperand typedOperand = operand.asTypedOperand();
+                                final VisitorOperand operand =
+                                        queryOptions.getFilterOption().getExpression().accept(new ExpressionVisitorImpl(entity, edmEntitySet));
+                                final TypedOperand typedOperand = operand.asTypedOperand();
 
-                                    if (typedOperand.is(ODataConstants.primitiveBoolean)) {
-                                        if (Boolean.FALSE.equals(typedOperand.getTypedValue(Boolean.class))) {
-                                            continue;
-                                        }
-                                    } else {
-                                        throw new ODataApplicationException(
-                                                "Invalid filter expression. Filter expressions must return a value of " +
-                                                        "type Edm.Boolean", HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ROOT);
+                                if (typedOperand.is(ODataConstants.primitiveBoolean) ) {
+                                    if (Boolean.FALSE.equals(typedOperand.getTypedValue(Boolean.class))) {
+                                        continue;
                                     }
-                                }
-                                catch (Exception e) {
-                                    e.printStackTrace();
+                                } else {
+                                    throw new ODataApplicationException(
+                                            "Invalid filter expression. Filter expressions must return a value of " +
+                                                    "type Edm.Boolean", HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ROOT);
                                 }
                             }
                             if(queryOptions.getSkipOption() != null) {
@@ -1377,6 +1373,10 @@ public class ODataAdapter implements ServiceHandler {
                         return this.iterator.hasNext();
 
                     } catch ( ODataServiceFault e) {
+                        throw new RuntimeException(e);
+                    } catch (ExpressionVisitException e) {
+                        throw new RuntimeException(e);
+                    } catch (ODataApplicationException e) {
                         throw new RuntimeException(e);
                     }
                 }

@@ -88,6 +88,12 @@ public class RDBMSDataHandler implements ODataDataHandler {
      */
     private final int DEFAULT_BUFFER_SIZE = 1000;
 
+    private ResultSet streamResultSet;
+
+    private Connection streamConnection;
+
+    private PreparedStatement preparedStatement;
+
     /**
      * Number entities to skip during current read iteration
      */
@@ -413,6 +419,9 @@ public class RDBMSDataHandler implements ODataDataHandler {
 
     public void initStreaming() {
         this.skipEntityCount = 0;
+        this.streamResultSet = null;
+        this.streamConnection = null;
+        this.preparedStatement = null;
     }
 
     public int getEntityCountWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
@@ -434,8 +443,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
             }
             resultSet = statement.executeQuery();
             resultSet.next();
-            int count = resultSet.getInt("rowcount");
-            return count;
+            return resultSet.getInt(1);
             //return createDataEntryCollectionFromRS(tableName, resultSet);
         } catch (SQLException | ParseException e) {
             throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
@@ -452,12 +460,11 @@ public class RDBMSDataHandler implements ODataDataHandler {
         PreparedStatement statement = null;
         try {
             connection = initializeConnection();
-            String query = "select count(*) as rowcount from " + tableName;
+            String query = "select count(*) from " + tableName;
             statement = connection.prepareStatement(query);
             resultSet = statement.executeQuery();
             resultSet.next();
-            int count = resultSet.getInt("rowcount");
-            return count;
+            return resultSet.getInt(1);
         } catch (SQLException e) {
             throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
                     e.getMessage());
@@ -468,44 +475,161 @@ public class RDBMSDataHandler implements ODataDataHandler {
     }
 
     public List<ODataEntry> streamTable(String tableName) throws ODataServiceFault {
-        ResultSet resultSet = null;
-        Connection connection = null;
-        PreparedStatement statement = null;
+        List<ODataEntry> entitySet = new ArrayList<>();
+        boolean closeStreamFlag = false;
         try {
-            connection = initializeConnection();
-            String query = "select * from " + tableName + " limit " + this.skipEntityCount +","+this.bufferSize;
-            statement = connection.prepareStatement(query);
-            resultSet = statement.executeQuery();
-            this.skipEntityCount += this.bufferSize;
-            return createDataEntryCollectionFromRS(tableName, resultSet);
-        } catch (SQLException e) {
+            if(this.streamConnection == null) {
+                this.streamConnection = initializeConnection();
+                String query = "select * from " + tableName;
+                this.preparedStatement = this.streamConnection.prepareStatement(query, ResultSet.TYPE_SCROLL_INSENSITIVE,
+                        ResultSet.CONCUR_READ_ONLY);
+
+                this.preparedStatement.setFetchSize(this.bufferSize);
+                this.streamResultSet = this.preparedStatement.executeQuery();
+            }
+            int count = 0;
+            String paramValue;
+            //this.streamResultSet.
+            while (this.streamResultSet.next()) {
+                ODataEntry entry = new ODataEntry();
+                //Creating a unique string to represent the
+                for (String column : this.rdbmsDataTypes.get(tableName).keySet()) {
+                    int columnType = this.rdbmsDataTypes.get(tableName).get(column);
+                    paramValue = getValueFromResultSet(columnType, column, this.streamResultSet);
+                    entry.addValue(column, paramValue);
+                }
+                //Set Etag to the entity
+                entry.addValue("ETag", ODataUtils.generateETag(this.configID, tableName, entry));
+                entitySet.add(entry);
+                count++;
+                if(count >= this.bufferSize) {
+                    break;
+                }
+            }
+            if(this.streamResultSet.isLast() || this.streamResultSet.isAfterLast()) {
+                closeStreamFlag = true;
+            }
+
+        }
+        catch (SQLException e) {
             throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
                     e.getMessage());
-        } finally {
-            releaseResources(resultSet, statement);
-            releaseConnection(connection);
+        }
+        finally {
+            if(closeStreamFlag) {
+                this.closeStream();
+            }
+            return entitySet;
+        }
+
+//        ResultSet resultSet = null;
+//        Connection connection = null;
+//        PreparedStatement statement = null;
+//        try {
+//            connection = initializeConnection();
+//            String query = "select * from " + tableName + " limit " + this.skipEntityCount +","+this.bufferSize;
+//            statement = connection.prepareStatement(query);
+//
+//
+//            statement.setFetchSize(this.bufferSize);
+//            resultSet = statement.executeQuery();
+//            resultSet.setFetchDirection();
+//
+//            resultSet = statement.executeQuery();
+//            this.skipEntityCount += this.bufferSize;
+//            return createDataEntryCollectionFromRS(tableName, resultSet);
+//        } catch (SQLException e) {
+//            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
+//                    e.getMessage());
+//        } finally {
+//            releaseResources(resultSet, statement);
+//            releaseConnection(connection);
+//        }
+    }
+
+    private void closeStream() throws ODataServiceFault {
+
+        try {
+            this.streamResultSet.close();
+            this.preparedStatement.close();
+            this.streamConnection.close();
+
+        } catch (SQLException e) {
+            throw new ODataServiceFault("Error occurred while trying to close the database connection");
+        }
+        finally {
+            this.streamResultSet = null;
+            this.preparedStatement = null;
+            this.streamConnection = null;
         }
     }
 
     public List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault {
-        ResultSet resultSet = null;
-        Connection connection = null;
-        PreparedStatement statement = null;
+        List<ODataEntry> entitySet = new ArrayList<>();
+        boolean closeStreamFlag = false;
         try {
-            connection = initializeConnection();
-            String orderBy = getSortStatement(orderByOption);
-            String query = "select * from " + tableName + " " + orderBy + " limit "  + this.skipEntityCount +","+this.bufferSize;
-            statement = connection.prepareStatement(query);
-            resultSet = statement.executeQuery();
-            this.skipEntityCount += this.bufferSize;
-            return createDataEntryCollectionFromRS(tableName, resultSet);
-        } catch (SQLException e) {
+            if(this.streamConnection == null) {
+                this.streamConnection = initializeConnection();
+                String orderBy = getSortStatement(orderByOption);
+                String query = "select * from " + tableName + " " + orderBy;
+                this.preparedStatement = this.streamConnection.prepareStatement(query, ResultSet.TYPE_SCROLL_INSENSITIVE,
+                        ResultSet.CONCUR_READ_ONLY);
+
+                this.preparedStatement.setFetchSize(this.bufferSize);
+                this.streamResultSet = this.preparedStatement.executeQuery();
+            }
+            int count = 0;
+            String paramValue;
+            //this.streamResultSet.
+            while (this.streamResultSet.next()) {
+                ODataEntry entry = new ODataEntry();
+                //Creating a unique string to represent the
+                for (String column : this.rdbmsDataTypes.get(tableName).keySet()) {
+                    int columnType = this.rdbmsDataTypes.get(tableName).get(column);
+                    paramValue = getValueFromResultSet(columnType, column, this.streamResultSet);
+                    entry.addValue(column, paramValue);
+                }
+                //Set Etag to the entity
+                entry.addValue("ETag", ODataUtils.generateETag(this.configID, tableName, entry));
+                entitySet.add(entry);
+                count++;
+                if(count >= this.bufferSize) {
+                    break;
+                }
+            }
+            if(this.streamResultSet.isLast() || this.streamResultSet.isAfterLast()) {
+                closeStreamFlag = true;
+            }
+
+        }
+        catch (SQLException e) {
             throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
                     e.getMessage());
-        } finally {
-            releaseResources(resultSet, statement);
-            releaseConnection(connection);
         }
+        finally {
+            if(closeStreamFlag) {
+                this.closeStream();
+            }
+            return entitySet;
+        }
+//        ResultSet resultSet = null;
+//        Connection connection = null;
+//        PreparedStatement statement = null;
+//        try {
+//            connection = initializeConnection();
+//            String orderBy = getSortStatement(orderByOption);
+//            String query = "select * from " + tableName + " " + orderBy + " limit "  + this.skipEntityCount +","+this.bufferSize;
+//            statement = connection.prepareStatement(query);
+//            resultSet = statement.executeQuery();
+//            this.skipEntityCount += this.bufferSize;
+//            return createDataEntryCollectionFromRS(tableName, resultSet);
+//        } catch (SQLException e) {
+//            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
+//                    e.getMessage());
+//        } finally {
+//            releaseResources(resultSet, statement);
+//            releaseConnection(connection);
+//        }
     }
 
     /**
@@ -657,32 +781,89 @@ public class RDBMSDataHandler implements ODataDataHandler {
     }
 
     public List<ODataEntry> streamTableWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
-        ResultSet resultSet = null;
-        Connection connection = null;
-        PreparedStatement statement = null;
+        List<ODataEntry> entitySet = new ArrayList<>();
+        boolean closeStreamFlag = false;
         try {
-            connection = initializeConnection();
-            String query = createReadSqlWithKeys(tableName, keys) + " limit " + this.skipEntityCount +","+this.bufferSize;
-            statement = connection.prepareStatement(query);
-            int index = 1;
-            for (String column : keys.getNames()) {
-                if (this.rdbmsDataTypes.get(tableName).keySet().contains(column)) {
-                    String value = keys.getValue(column);
-                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index,
-                            statement);
-                    index++;
+            if(this.streamConnection == null) {
+
+                this.streamConnection = initializeConnection();
+                String query = createReadSqlWithKeys(tableName, keys);
+                this.preparedStatement = this.streamConnection.prepareStatement(query, ResultSet.TYPE_SCROLL_INSENSITIVE,
+                        ResultSet.CONCUR_READ_ONLY);
+                this.preparedStatement.setFetchSize(this.bufferSize);
+
+                int index = 1;
+                for (String column : keys.getNames()) {
+                    if (this.rdbmsDataTypes.get(tableName).keySet().contains(column)) {
+                        String value = keys.getValue(column);
+                        bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index,
+                                this.preparedStatement);
+                        index++;
+                    }
+                }
+                this.streamResultSet = this.preparedStatement.executeQuery();
+            }
+            int count = 0;
+            String paramValue;
+            //this.streamResultSet.
+            while (this.streamResultSet.next()) {
+                ODataEntry entry = new ODataEntry();
+                //Creating a unique string to represent the
+                for (String column : this.rdbmsDataTypes.get(tableName).keySet()) {
+                    int columnType = this.rdbmsDataTypes.get(tableName).get(column);
+                    paramValue = getValueFromResultSet(columnType, column, this.streamResultSet);
+                    entry.addValue(column, paramValue);
+                }
+                //Set Etag to the entity
+                entry.addValue("ETag", ODataUtils.generateETag(this.configID, tableName, entry));
+                entitySet.add(entry);
+                count++;
+                if(count >= this.bufferSize) {
+                    break;
                 }
             }
-            resultSet = statement.executeQuery();
-            this.skipEntityCount += this.bufferSize;
-            return createDataEntryCollectionFromRS(tableName, resultSet);
-        } catch (SQLException | ParseException e) {
+            if(this.streamResultSet.isLast() || this.streamResultSet.isAfterLast()) {
+                closeStreamFlag = true;
+            }
+
+        }
+        catch (SQLException e) {
             throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
                     e.getMessage());
-        } finally {
-            releaseResources(resultSet, statement);
-            releaseConnection(connection);
         }
+        finally {
+            if(closeStreamFlag) {
+                this.closeStream();
+            }
+            return entitySet;
+        }
+//
+//        ResultSet resultSet = null;
+//        Connection connection = null;
+//        PreparedStatement statement = null;
+//        try {
+//            connection = initializeConnection();
+//            String query = createReadSqlWithKeys(tableName, keys) + " limit " + this.skipEntityCount +","+this.bufferSize;
+//            statement = connection.prepareStatement(query);
+//            int index = 1;
+//            for (String column : keys.getNames()) {
+//                if (this.rdbmsDataTypes.get(tableName).keySet().contains(column)) {
+//                    String value = keys.getValue(column);
+//                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index,
+//                            statement);
+//                    index++;
+//                }
+//            }
+//            resultSet = statement.executeQuery();
+//            this.skipEntityCount += this.bufferSize;
+//            return createDataEntryCollectionFromRS(tableName, resultSet);
+//        } catch (SQLException | ParseException e) {
+//            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
+//                    e.getMessage());
+//        } finally {
+//            releaseResources(resultSet, statement);
+//            releaseConnection(connection);
+//        }
     }
 
     /**
@@ -1481,7 +1662,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
      */
     private String createCountSqlWithKeys(String tableName, ODataEntry keys) {
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT count(*) as rowcount FROM ").append(tableName).append(" WHERE ");
+        sql.append("SELECT count(*) FROM ").append(tableName).append(" WHERE ");
         boolean propertyMatch = false;
         for (String column : this.rdbmsDataTypes.get(tableName).keySet()) {
             if (keys.getNames().contains(column)) {
