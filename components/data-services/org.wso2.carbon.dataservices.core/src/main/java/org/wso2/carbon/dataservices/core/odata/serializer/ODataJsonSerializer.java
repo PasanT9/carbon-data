@@ -2,6 +2,7 @@ package org.wso2.carbon.dataservices.core.odata.serializer;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URI;
@@ -12,6 +13,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import org.apache.olingo.commons.api.data.AbstractEntityCollection;
 import org.apache.olingo.commons.api.data.ComplexValue;
 import org.apache.olingo.commons.api.data.ContextURL;
@@ -75,6 +77,19 @@ import org.apache.olingo.server.core.uri.queryoption.ExpandOptionImpl;
 
 public class ODataJsonSerializer extends AbstractODataSerializer {
     private static final Map<Geospatial.Type, String> geoValueTypeToJsonName;
+
+    static {
+        Map<Geospatial.Type, String> temp = new EnumMap(Geospatial.Type.class);
+        temp.put(Type.POINT, "Point");
+        temp.put(Type.MULTIPOINT, "MultiPoint");
+        temp.put(Type.LINESTRING, "LineString");
+        temp.put(Type.MULTILINESTRING, "MultiLineString");
+        temp.put(Type.POLYGON, "Polygon");
+        temp.put(Type.MULTIPOLYGON, "MultiPolygon");
+        temp.put(Type.GEOSPATIALCOLLECTION, "GeometryCollection");
+        geoValueTypeToJsonName = Collections.unmodifiableMap(temp);
+    }
+
     private final boolean isIEEE754Compatible;
     private final boolean isODataMetadataNone;
     private final boolean isODataMetadataFull;
@@ -157,9 +172,9 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
             this.writeOperations(entitySet.getOperations(), json);
             json.writeFieldName("value");
             if (options == null) {
-                this.writeEntitySet(metadata, entityType, entitySet, (ExpandOption)null, (Integer)null, (SelectOption)null, false, (Set)null, name, json);
+                this.writeEntitySet(metadata, entityType, entitySet, (ExpandOption) null, (Integer) null, (SelectOption) null, false, (Set) null, name, json);
             } else {
-                this.writeEntitySet(metadata, entityType, entitySet, options.getExpand(), (Integer)null, options.getSelect(), options.getWriteOnlyReferences(), (Set)null, name, json);
+                this.writeEntitySet(metadata, entityType, entitySet, options.getExpand(), (Integer) null, options.getSelect(), options.getWriteOnlyReferences(), (Set) null, name, json);
             }
 
             this.writeNextLink(entitySet, json, pagination);
@@ -194,9 +209,9 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
             json.writeFieldName("value");
             String name = contextURL == null ? null : contextURL.getEntitySetOrSingletonOrType();
             if (options == null) {
-                this.writeEntitySet(metadata, entityType, entitySet, (ExpandOption)null, (Integer)null, (SelectOption)null, false, (Set)null, name, json);
+                this.writeEntitySet(metadata, entityType, entitySet, (ExpandOption) null, (Integer) null, (SelectOption) null, false, (Set) null, name, json);
             } else {
-                this.writeEntitySet(metadata, entityType, entitySet, options.getExpand(), (Integer)null, options.getSelect(), options.getWriteOnlyReferences(), (Set)null, name, json);
+                this.writeEntitySet(metadata, entityType, entitySet, options.getExpand(), (Integer) null, options.getSelect(), options.getWriteOnlyReferences(), (Set) null, name, json);
             }
 
             if (options != null && options.getCount() != null && options.getCount().getValue()) {
@@ -222,7 +237,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
             outputStream = buffer.getOutputStream();
             JsonGenerator json = (new JsonFactory()).createGenerator(outputStream);
             String name = contextURL == null ? null : contextURL.getEntitySetOrSingletonOrType();
-            this.writeEntity(metadata, entityType, entity, contextURL, options == null ? null : options.getExpand(), (Integer)null, options == null ? null : options.getSelect(), options == null ? false : options.getWriteOnlyReferences(), (Set)null, name, json);
+            this.writeEntity(metadata, entityType, entity, contextURL, options == null ? null : options.getExpand(), (Integer) null, options == null ? null : options.getSelect(), options == null ? false : options.getWriteOnlyReferences(), (Set) null, name, json);
             json.close();
             outputStream.close();
             var11 = SerializerResultImpl.with().content(buffer.getInputStream()).build();
@@ -250,14 +265,14 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
         json.writeStartArray();
         Iterator var11 = entitySet.iterator();
 
-        while(var11.hasNext()) {
-            Entity entity = (Entity)var11.next();
+        while (var11.hasNext()) {
+            Entity entity = (Entity) var11.next();
             if (onlyReference) {
                 json.writeStartObject();
                 json.writeStringField("@odata.id", this.getEntityId(entity, entityType, name));
                 json.writeEndObject();
             } else {
-                this.writeEntity(metadata, entityType, entity, (ContextURL)null, expand, toDepth, select, false, ancestors, name, json);
+                this.writeEntity(metadata, entityType, entity, (ContextURL) null, expand, toDepth, select, false, ancestors, name, json);
             }
         }
 
@@ -288,8 +303,8 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
                     return true;
                 }
 
-                key = (String)var4.next();
-            } while(selected.contains(key));
+                key = (String) var4.next();
+            } while (selected.contains(key));
 
             return false;
         } else {
@@ -304,7 +319,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
                 ancestors = new HashSet();
             }
 
-            cycle = !((Set)ancestors).add(this.getEntityId(entity, entityType, name));
+            cycle = !((Set) ancestors).add(this.getEntityId(entity, entityType, name));
         }
 
         try {
@@ -333,7 +348,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
                     }
 
                     if (entity.getMediaEditLinks() != null && !entity.getMediaEditLinks().isEmpty()) {
-                        json.writeStringField("@odata.mediaEditLink", ((Link)entity.getMediaEditLinks().get(0)).getHref());
+                        json.writeStringField("@odata.mediaEditLink", ((Link) entity.getMediaEditLinks().get(0)).getHref());
                     }
                 }
             }
@@ -359,7 +374,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
                 }
 
                 this.writeProperties(metadata, resolvedType, entity.getProperties(), select, json);
-                this.writeNavigationProperties(metadata, resolvedType, entity, expand, toDepth, (Set)ancestors, name, json);
+                this.writeNavigationProperties(metadata, resolvedType, entity, expand, toDepth, (Set) ancestors, name, json);
                 this.writeOperations(entity.getOperations(), json);
             } else {
                 json.writeStringField("@odata.id", this.getEntityId(entity, entityType, name));
@@ -368,7 +383,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
             json.writeEndObject();
         } finally {
             if (expand != null && !cycle && ancestors != null) {
-                ((Set)ancestors).remove(this.getEntityId(entity, entityType, name));
+                ((Set) ancestors).remove(this.getEntityId(entity, entityType, name));
             }
 
         }
@@ -379,8 +394,8 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
         if (this.isODataMetadataFull) {
             Iterator var3 = operations.iterator();
 
-            while(var3.hasNext()) {
-                Operation operation = (Operation)var3.next();
+            while (var3.hasNext()) {
+                Operation operation = (Operation) var3.next();
                 json.writeObjectFieldStart(operation.getMetadataAnchor());
                 json.writeStringField("title", operation.getTitle());
                 json.writeStringField("target", operation.getTarget().toASCIIString());
@@ -396,7 +411,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
             if (derivedType == null) {
                 throw new SerializerException("EntityType not found", MessageKeys.UNKNOWN_TYPE, new String[]{derivedTypeName});
             } else {
-                for(EdmEntityType type = derivedType.getBaseType(); type != null; type = type.getBaseType()) {
+                for (EdmEntityType type = derivedType.getBaseType(); type != null; type = type.getBaseType()) {
                     if (type.getFullQualifiedName().equals(baseType.getFullQualifiedName())) {
                         return derivedType;
                     }
@@ -416,7 +431,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
             if (derivedType == null) {
                 throw new SerializerException("Complex Type not found", MessageKeys.UNKNOWN_TYPE, new String[]{derivedTypeName});
             } else {
-                for(EdmComplexType type = derivedType.getBaseType(); type != null; type = type.getBaseType()) {
+                for (EdmComplexType type = derivedType.getBaseType(); type != null; type = type.getBaseType()) {
                     if (type.getFullQualifiedName().equals(baseType.getFullQualifiedName())) {
                         return derivedType;
                     }
@@ -434,15 +449,15 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
         Set<String> selected = all ? new HashSet() : ExpandSelectHelper.getSelectedPropertyNames(select.getSelectItems());
         Iterator var8 = type.getPropertyNames().iterator();
 
-        while(true) {
+        while (true) {
             String propertyName;
             do {
                 if (!var8.hasNext()) {
                     return;
                 }
 
-                propertyName = (String)var8.next();
-            } while(!all && !((Set)selected).contains(propertyName));
+                propertyName = (String) var8.next();
+            } while (!all && !((Set) selected).contains(propertyName));
 
             EdmProperty edmProperty = type.getStructuralProperty(propertyName);
             Property property = this.findProperty(propertyName, properties);
@@ -455,8 +470,8 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
         if (this.isODataMetadataFull) {
             Iterator var9 = type.getNavigationPropertyNames().iterator();
 
-            while(var9.hasNext()) {
-                String propertyName = (String)var9.next();
+            while (var9.hasNext()) {
+                String propertyName = (String) var9.next();
                 Link navigationLink = linked.getNavigationLink(propertyName);
                 if (navigationLink != null) {
                     json.writeStringField(propertyName + "@odata.navigationLink", navigationLink.getHref());
@@ -473,7 +488,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
             ExpandItem expandAll = ExpandSelectHelper.getExpandAll(expand);
             Iterator var19 = type.getNavigationPropertyNames().iterator();
 
-            while(true) {
+            while (true) {
                 String propertyName;
                 ExpandItem innerOptions;
                 do {
@@ -481,9 +496,9 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
                         return;
                     }
 
-                    propertyName = (String)var19.next();
+                    propertyName = (String) var19.next();
                     innerOptions = ExpandSelectHelper.getExpandItem(expand.getExpandItems(), propertyName);
-                } while(innerOptions == null && expandAll == null && toDepth == null);
+                } while (innerOptions == null && expandAll == null && toDepth == null);
 
                 Integer levels = null;
                 EdmNavigationProperty property = type.getNavigationProperty(propertyName);
@@ -508,7 +523,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
                     childExpand = expand;
                 }
 
-                this.writeExpandedNavigationProperty(metadata, property, navigationLink, (ExpandOption)childExpand, levels, innerOptions == null ? null : innerOptions.getSelectOption(), innerOptions == null ? null : innerOptions.getCountOption(), innerOptions == null ? false : innerOptions.hasCountPath(), innerOptions == null ? false : innerOptions.isRef(), ancestors, name, json);
+                this.writeExpandedNavigationProperty(metadata, property, navigationLink, (ExpandOption) childExpand, levels, innerOptions == null ? null : innerOptions.getSelectOption(), innerOptions == null ? null : innerOptions.getCountOption(), innerOptions == null ? false : innerOptions.hasCountPath(), innerOptions == null ? false : innerOptions.isRef(), ancestors, name, json);
             }
         }
     }
@@ -540,7 +555,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
         } else {
             json.writeFieldName(property.getName());
             if (navigationLink != null && navigationLink.getInlineEntity() != null) {
-                this.writeEntity(metadata, property.getType(), navigationLink.getInlineEntity(), (ContextURL)null, innerExpand, toDepth, innerSelect, writeOnlyRef, ancestors, name, json);
+                this.writeEntity(metadata, property.getType(), navigationLink.getInlineEntity(), (ContextURL) null, innerExpand, toDepth, innerSelect, writeOnlyRef, ancestors, name, json);
             } else {
                 json.writeNull();
             }
@@ -618,14 +633,14 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
                 }
 
                 if (edmProperty.isCollection()) {
-                    this.writeComplexCollection(metadata, (EdmComplexType)type, property, selectedPaths, json);
+                    this.writeComplexCollection(metadata, (EdmComplexType) type, property, selectedPaths, json);
                 } else {
-                    this.writeComplex(metadata, (EdmComplexType)type, property, selectedPaths, json);
+                    this.writeComplex(metadata, (EdmComplexType) type, property, selectedPaths, json);
                 }
             } else if (edmProperty.isCollection()) {
-                this.writePrimitiveCollection((EdmPrimitiveType)type, property, edmProperty.isNullable(), edmProperty.getMaxLength(), edmProperty.getPrecision(), edmProperty.getScale(), edmProperty.isUnicode(), json);
+                this.writePrimitiveCollection((EdmPrimitiveType) type, property, edmProperty.isNullable(), edmProperty.getMaxLength(), edmProperty.getPrecision(), edmProperty.getScale(), edmProperty.isUnicode(), json);
             } else {
-                this.writePrimitive((EdmPrimitiveType)type, property, edmProperty.isNullable(), edmProperty.getMaxLength(), edmProperty.getPrecision(), edmProperty.getScale(), edmProperty.isUnicode(), json);
+                this.writePrimitive((EdmPrimitiveType) type, property, edmProperty.isNullable(), edmProperty.getMaxLength(), edmProperty.getPrecision(), edmProperty.getScale(), edmProperty.isUnicode(), json);
             }
 
         } catch (EdmPrimitiveTypeException var8) {
@@ -659,7 +674,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
         json.writeStartArray();
         Iterator var9 = property.asCollection().iterator();
 
-        while(var9.hasNext()) {
+        while (var9.hasNext()) {
             Object value = var9.next();
             switch (property.getValueType()) {
                 case COLLECTION_PRIMITIVE:
@@ -683,9 +698,9 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
         json.writeStartArray();
         Iterator var7 = property.asCollection().iterator();
 
-        while(var7.hasNext()) {
+        while (var7.hasNext()) {
             Object value = var7.next();
-            EdmComplexType derivedType = ((ComplexValue)value).getTypeName() != null ? metadata.getEdm().getComplexType(new FullQualifiedName(((ComplexValue)value).getTypeName())) : type;
+            EdmComplexType derivedType = ((ComplexValue) value).getTypeName() != null ? metadata.getEdm().getComplexType(new FullQualifiedName(((ComplexValue) value).getTypeName())) : type;
             switch (property.getValueType()) {
                 case COLLECTION_COMPLEX:
                     json.writeStartObject();
@@ -693,7 +708,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
                         json.writeStringField("@odata.type", "#" + derivedType.getFullQualifiedName().getFullQualifiedNameAsString());
                     }
 
-                    this.writeComplexValue(metadata, derivedType, ((ComplexValue)value).getValue(), selectedPaths, json);
+                    this.writeComplexValue(metadata, derivedType, ((ComplexValue) value).getValue(), selectedPaths, json);
                     json.writeEndObject();
                     break;
                 default:
@@ -729,7 +744,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
             json.writeNumber(value);
         } else if (type == EdmPrimitiveTypeFactory.getInstance(EdmPrimitiveTypeKind.Stream)) {
             if (primitiveValue instanceof Link) {
-                Link stream = (Link)primitiveValue;
+                Link stream = (Link) primitiveValue;
                 if (!this.isODataMetadataNone) {
                     if (stream.getMediaETag() != null) {
                         json.writeStringField(name + "@odata.mediaEtag", stream.getMediaETag());
@@ -773,55 +788,55 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
             }
 
             json.writeStartObject();
-            json.writeStringField("type", (String)geoValueTypeToJsonName.get(geoValue.getGeoType()));
+            json.writeStringField("type", (String) geoValueTypeToJsonName.get(geoValue.getGeoType()));
             json.writeFieldName(geoValue.getGeoType() == Type.GEOSPATIALCOLLECTION ? "geometries" : "coordinates");
             json.writeStartArray();
             Iterator var6;
             label54:
             switch (geoValue.getGeoType()) {
                 case POINT:
-                    this.writeGeoPoint(json, (Point)geoValue);
+                    this.writeGeoPoint(json, (Point) geoValue);
                     break;
                 case MULTIPOINT:
-                    this.writeGeoPoints(json, (MultiPoint)geoValue);
+                    this.writeGeoPoints(json, (MultiPoint) geoValue);
                     break;
                 case LINESTRING:
-                    this.writeGeoPoints(json, (LineString)geoValue);
+                    this.writeGeoPoints(json, (LineString) geoValue);
                     break;
                 case MULTILINESTRING:
-                    var6 = ((MultiLineString)geoValue).iterator();
+                    var6 = ((MultiLineString) geoValue).iterator();
 
-                    while(true) {
+                    while (true) {
                         if (!var6.hasNext()) {
                             break label54;
                         }
 
-                        LineString lineString = (LineString)var6.next();
+                        LineString lineString = (LineString) var6.next();
                         json.writeStartArray();
                         this.writeGeoPoints(json, lineString);
                         json.writeEndArray();
                     }
                 case POLYGON:
-                    this.writeGeoPolygon(json, (Polygon)geoValue);
+                    this.writeGeoPolygon(json, (Polygon) geoValue);
                     break;
                 case MULTIPOLYGON:
-                    var6 = ((MultiPolygon)geoValue).iterator();
+                    var6 = ((MultiPolygon) geoValue).iterator();
 
-                    while(true) {
+                    while (true) {
                         if (!var6.hasNext()) {
                             break label54;
                         }
 
-                        Polygon polygon = (Polygon)var6.next();
+                        Polygon polygon = (Polygon) var6.next();
                         json.writeStartArray();
                         this.writeGeoPolygon(json, polygon);
                         json.writeEndArray();
                     }
                 case GEOSPATIALCOLLECTION:
-                    var6 = ((GeospatialCollection)geoValue).iterator();
+                    var6 = ((GeospatialCollection) geoValue).iterator();
 
-                    while(var6.hasNext()) {
-                        Geospatial element = (Geospatial)var6.next();
+                    while (var6.hasNext()) {
+                        Geospatial element = (Geospatial) var6.next();
                         this.writeGeoValue(name, EdmPrimitiveTypeFactory.getInstance(element.getEdmPrimitiveTypeKind()), element, isNullable, json);
                     }
             }
@@ -844,8 +859,8 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
     private void writeGeoPoints(JsonGenerator json, ComposedGeospatial<Point> points) throws IOException {
         Iterator var3 = points.iterator();
 
-        while(var3.hasNext()) {
-            Point point = (Point)var3.next();
+        while (var3.hasNext()) {
+            Point point = (Point) var3.next();
             json.writeStartArray();
             this.writeGeoPoint(json, point);
             json.writeEndArray();
@@ -868,7 +883,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
     protected void writeComplexValue(ServiceMetadata metadata, EdmComplexType type, List<Property> properties, Set<List<String>> selectedPaths, JsonGenerator json) throws IOException, SerializerException {
         Iterator var6 = type.getPropertyNames().iterator();
 
-        while(true) {
+        while (true) {
             String propertyName;
             Property property;
             do {
@@ -876,11 +891,11 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
                     return;
                 }
 
-                propertyName = (String)var6.next();
+                propertyName = (String) var6.next();
                 property = this.findProperty(propertyName, properties);
-            } while(selectedPaths != null && !ExpandSelectHelper.isSelected(selectedPaths, propertyName));
+            } while (selectedPaths != null && !ExpandSelectHelper.isSelected(selectedPaths, propertyName));
 
-            this.writeProperty(metadata, (EdmProperty)type.getProperty(propertyName), property, selectedPaths == null ? null : ExpandSelectHelper.getReducedSelectedPaths(selectedPaths, propertyName), json);
+            this.writeProperty(metadata, (EdmProperty) type.getProperty(propertyName), property, selectedPaths == null ? null : ExpandSelectHelper.getReducedSelectedPaths(selectedPaths, propertyName), json);
         }
     }
 
@@ -893,8 +908,8 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
                 return null;
             }
 
-            property = (Property)var3.next();
-        } while(!propertyName.equals(property.getName()));
+            property = (Property) var3.next();
+        } while (!propertyName.equals(property.getName()));
 
         return property;
     }
@@ -1039,7 +1054,7 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
 
             this.writeOperations(property.getOperations(), json);
             json.writeFieldName("value");
-            this.writeComplexCollection(metadata, type, property, (Set)null, json);
+            this.writeComplexCollection(metadata, type, property, (Set) null, json);
             json.writeEndObject();
             json.close();
             outputStream.close();
@@ -1102,8 +1117,8 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
             json.writeArrayFieldStart("value");
             Iterator var12 = entityCollection.iterator();
 
-            while(var12.hasNext()) {
-                Entity entity = (Entity)var12.next();
+            while (var12.hasNext()) {
+                Entity entity = (Entity) var12.next();
                 json.writeStartObject();
                 json.writeStringField("@odata.id", uriHelper.buildCanonicalURL(edmEntitySet, entity));
                 json.writeEndObject();
@@ -1164,17 +1179,5 @@ public class ODataJsonSerializer extends AbstractODataSerializer {
             json.writeStringField("@odata.deltaLink", entitySet.getDeltaLink().toASCIIString());
         }
 
-    }
-
-    static {
-        Map<Geospatial.Type, String> temp = new EnumMap(Geospatial.Type.class);
-        temp.put(Type.POINT, "Point");
-        temp.put(Type.MULTIPOINT, "MultiPoint");
-        temp.put(Type.LINESTRING, "LineString");
-        temp.put(Type.MULTILINESTRING, "MultiLineString");
-        temp.put(Type.POLYGON, "Polygon");
-        temp.put(Type.MULTIPOLYGON, "MultiPolygon");
-        temp.put(Type.GEOSPATIALCOLLECTION, "GeometryCollection");
-        geoValueTypeToJsonName = Collections.unmodifiableMap(temp);
     }
 }

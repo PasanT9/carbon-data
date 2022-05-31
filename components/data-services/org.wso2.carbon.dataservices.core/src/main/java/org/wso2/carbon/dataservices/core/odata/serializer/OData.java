@@ -2,6 +2,7 @@ package org.wso2.carbon.dataservices.core.odata.serializer;
 
 import java.util.Collection;
 import java.util.List;
+
 import org.apache.olingo.commons.api.edm.EdmPrimitiveType;
 import org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind;
 import org.apache.olingo.commons.api.edm.provider.CsdlEdmProvider;

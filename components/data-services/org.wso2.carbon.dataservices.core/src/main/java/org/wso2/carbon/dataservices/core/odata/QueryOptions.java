@@ -144,30 +144,29 @@ public class QueryOptions {
      * Increment skipCount by 1
      */
     public void stepSkipCount() {
-        this.setSkipCount(this.getSkipCount()+1);
+        this.setSkipCount(this.getSkipCount() + 1);
     }
 
     /**
      * Increment topCount by 1
      */
     public void stepTopCount() {
-        this.setTopCount(this.getTopCount()+1);
+        this.setTopCount(this.getTopCount() + 1);
     }
 
     /**
      * Increment skipTokenCount by 1
      */
     public void stepSkipTokenCount() {
-        this.setSkipTokenCount(this.getSkipTokenCount()+1);
+        this.setSkipTokenCount(this.getSkipTokenCount() + 1);
     }
 
     /**
      * Initialize pagination
-     *
+     * <p>
      * Set page size
      * Set current page
      * Set link to the next page
-     *
      */
     public void initPagination(int pageSize, String baseURL, String tableName) {
         this.setPageSize(pageSize);

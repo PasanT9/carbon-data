@@ -40,45 +40,44 @@ import org.wso2.carbon.dataservices.core.engine.DataEntry;
  */
 public class MongoDataHandler implements ODataDataHandler {
 
+    private static final String ETAG = "ETag";
+    private static final String DOCUMENT_ID = "_id";
     /**
      * configuration ID is the ID given for the data service, at the time
      * when the particular service is created.
      */
 
     private final String configId;
-
+    /**
+     * Default buffer size
+     */
+    private final int DEFAULT_BUFFER_SIZE = 1000;
     /**
      * DocumentId/ObjectId s of the Collections
      */
     private Map<String, List<String>> primaryKeys;
-
     /**
      * List of Collections in the Database.
      */
     private List<String> tableList;
-
     /**
      * Metadata of the Collections
      */
     private Map<String, Map<String, DataColumn>> tableMetaData;
     private Jongo jongo;
-    private static final String ETAG = "ETag";
-    private static final String DOCUMENT_ID = "_id";
-
     /**
      * Preferred buffer size
      */
     private int bufferSize;
-
-    /**
-     * Default buffer size
-     */
-    private final int DEFAULT_BUFFER_SIZE = 1000;
-
     /**
      * Number entities to skip during current read iteration
      */
     private int skipEntityCount;
+    private ThreadLocal<Boolean> transactionAvailable = new ThreadLocal<Boolean>() {
+        protected synchronized Boolean initialValue() {
+            return false;
+        }
+    };
 
     public MongoDataHandler(String configId, Jongo jongo) {
         this.configId = configId;
@@ -120,8 +119,7 @@ public class MongoDataHandler implements ODataDataHandler {
                 Iterator<?> keys = new JSONObject(tempValue).keys();
                 while (keys.hasNext()) {
                     String columnName = (String) keys.next();
-                    DataColumn dataColumn = new DataColumn(columnName, DataColumn.ODataDataType.STRING,
-                        ordinalPosition, true, 100, columnName.equals(DOCUMENT_ID));
+                    DataColumn dataColumn = new DataColumn(columnName, DataColumn.ODataDataType.STRING, ordinalPosition, true, 100, columnName.equals(DOCUMENT_ID));
                     column.put(columnName, dataColumn);
                     ordinalPosition++;
                 }
@@ -239,9 +237,7 @@ public class MongoDataHandler implements ODataDataHandler {
         limit.put("$limit", this.bufferSize);
         stages.add(limit);
 
-        AggregationOptions options = AggregationOptions.builder()
-                .outputMode(AggregationOptions.OutputMode.INLINE)
-                .build();
+        AggregationOptions options = AggregationOptions.builder().outputMode(AggregationOptions.OutputMode.INLINE).build();
 
         Iterator<DBObject> iterator = readResult.aggregate(stages, options);
 
@@ -277,30 +273,27 @@ public class MongoDataHandler implements ODataDataHandler {
         try {
             for (int i = 0; i < orderByOption.getOrders().size(); i++) {
                 final OrderByItem item = orderByOption.getOrders().get(i);
-                String expr = item.getExpression().toString().replaceAll("[\\[\\]]","").replaceAll("[\\{\\}]","");
+                String expr = item.getExpression().toString().replaceAll("[\\[\\]]", "").replaceAll("[\\{\\}]", "");
                 String[] exprArr = expr.split(" ");
 
                 int order = 0;
-                if(item.isDescending()) {
+                if (item.isDescending()) {
                     order = -1;
-                }
-                else {
+                } else {
                     order = 1;
                 }
 
-                if(exprArr.length == 1){
+                if (exprArr.length == 1) {
                     sortList.put(exprArr[0], order);
-                }
-                else if(exprArr.length == 2) {
+                } else if (exprArr.length == 2) {
                     BasicDBObject length = new BasicDBObject();
-                    length.put("$strLenCP", "$"+exprArr[1]);
+                    length.put("$strLenCP", "$" + exprArr[1]);
 
-                    fieldList.put(exprArr[1]+"Len", length);
-                    sortList.put(exprArr[1]+"Len", order);
+                    fieldList.put(exprArr[1] + "Len", length);
+                    sortList.put(exprArr[1] + "Len", order);
                 }
             }
-        }
-        catch(Exception e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
         BasicDBObject addFields = new BasicDBObject();
@@ -331,11 +324,9 @@ public class MongoDataHandler implements ODataDataHandler {
         ODataEntry dataEntry;
         for (String keyName : keys.getData().keySet()) {
             String keyValue = keys.getValue(keyName);
-            String projectionResult = jongo.getCollection(tableName).findOne(new ObjectId(keyValue)).
-                map(MongoQuery.MongoResultMapper.getInstance());
+            String projectionResult = jongo.getCollection(tableName).findOne(new ObjectId(keyValue)).map(MongoQuery.MongoResultMapper.getInstance());
             if (projectionResult == null) {
-                throw new ODataServiceFault(DOCUMENT_ID + keyValue + " does not exist in collection: "
-                    + tableName + " .");
+                throw new ODataServiceFault(DOCUMENT_ID + keyValue + " does not exist in collection: " + tableName + " .");
             }
             Iterator<?> key = new JSONObject(projectionResult).keys();
             dataEntry = createDataEntryFromResult(projectionResult, key);
@@ -415,8 +406,7 @@ public class MongoDataHandler implements ODataDataHandler {
         if (wasDeleted == 1) {
             return delete.wasAcknowledged();
         } else {
-            throw new ODataServiceFault("Document ID: " + documentId + " does not exist in "
-                    + "collection: " + tableName + ".");
+            throw new ODataServiceFault("Document ID: " + documentId + " does not exist in " + "collection: " + tableName + ".");
         }
     }
 
@@ -451,8 +441,7 @@ public class MongoDataHandler implements ODataDataHandler {
         if (wasUpdated == 1) {
             return update.wasAcknowledged();
         } else {
-            throw new ODataServiceFault("Document ID: " + newPropertyObjectKeyValue
-                    + " does not exist in collection: " + tableName + ".");
+            throw new ODataServiceFault("Document ID: " + newPropertyObjectKeyValue + " does not exist in collection: " + tableName + ".");
         }
     }
 
@@ -465,8 +454,7 @@ public class MongoDataHandler implements ODataDataHandler {
      * @throws ODataServiceFault
      */
     @Override
-    public boolean updateEntityInTableTransactional(String tableName, ODataEntry oldProperties,
-                                                    ODataEntry newProperties) throws ODataServiceFault {
+    public boolean updateEntityInTableTransactional(String tableName, ODataEntry oldProperties, ODataEntry newProperties) throws ODataServiceFault {
         String oldPropertyObjectKeyValue = oldProperties.getValue(DOCUMENT_ID);
         StringBuilder updateNewProperties = new StringBuilder();
         updateNewProperties.append("{$set: {");
@@ -486,8 +474,7 @@ public class MongoDataHandler implements ODataDataHandler {
         if (wasUpdated == 1) {
             return update.wasAcknowledged();
         } else {
-            throw new ODataServiceFault("Error occured while updating the entity to collection :"
-                    + tableName + ".");
+            throw new ODataServiceFault("Error occured while updating the entity to collection :" + tableName + ".");
         }
     }
 
@@ -495,12 +482,6 @@ public class MongoDataHandler implements ODataDataHandler {
     public Map<String, NavigationTable> getNavigationProperties() {
         return null;
     }
-
-    private ThreadLocal<Boolean> transactionAvailable = new ThreadLocal<Boolean>() {
-        protected synchronized Boolean initialValue() {
-            return false;
-        }
-    };
 
     /**
      * This method opens the transaction.
@@ -539,8 +520,7 @@ public class MongoDataHandler implements ODataDataHandler {
      * @throws ODataServiceFault
      */
     @Override
-    public void updateReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable,
-                                ODataEntry navigationTableKeys) throws ODataServiceFault {
+    public void updateReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable, ODataEntry navigationTableKeys) throws ODataServiceFault {
         throw new ODataServiceFault("MongoDB datasources do not support references.");
     }
 
@@ -555,15 +535,14 @@ public class MongoDataHandler implements ODataDataHandler {
      */
 
     @Override
-    public void deleteReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable,
-                                ODataEntry navigationTableKeys) throws ODataServiceFault {
+    public void deleteReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable, ODataEntry navigationTableKeys) throws ODataServiceFault {
         throw new ODataServiceFault("MongoDB datasources do not support references.");
     }
 
     @Override
     public int getEntityCount(String tableName) {
         DBCollection readResult = jongo.getDatabase().getCollection(tableName);
-        int rowCount = (int)readResult.getCount();
+        int rowCount = (int) readResult.getCount();
 
         return rowCount;
     }

@@ -3,6 +3,7 @@ package org.wso2.carbon.dataservices.core.odata.serializer;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+
 import org.apache.olingo.commons.api.edm.EdmPrimitiveType;
 import org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind;
 import org.apache.olingo.commons.api.edm.provider.CsdlEdmProvider;
@@ -60,7 +61,7 @@ public class ODataImpl extends OData {
         if (serializer == null) {
             throw new SerializerException("Unsupported format: " + contentType.toContentTypeString(), MessageKeys.UNSUPPORTED_FORMAT, new String[]{contentType.toContentTypeString()});
         } else {
-            return (ODataSerializer)serializer;
+            return (ODataSerializer) serializer;
         }
     }
 
@@ -97,7 +98,7 @@ public class ODataImpl extends OData {
     public EdmDeltaSerializer createEdmDeltaSerializer(ContentType contentType, List<String> versions) throws SerializerException {
         if (contentType.isCompatible(ContentType.APPLICATION_JSON)) {
             if (versions != null && versions.size() > 0) {
-                return (EdmDeltaSerializer)(this.getMaxVersion(versions) > 4.0F ? new JsonDeltaSerializerWithNavigations(contentType) : new JsonDeltaSerializer(contentType));
+                return (EdmDeltaSerializer) (this.getMaxVersion(versions) > 4.0F ? new JsonDeltaSerializerWithNavigations(contentType) : new JsonDeltaSerializer(contentType));
             } else {
                 return new JsonDeltaSerializerWithNavigations(contentType);
             }
@@ -112,8 +113,8 @@ public class ODataImpl extends OData {
         Float max = new Float(0.0F);
 
         Float ver;
-        for(Iterator var5 = versions.iterator(); var5.hasNext(); max = max > ver ? max : ver) {
-            String version = (String)var5.next();
+        for (Iterator var5 = versions.iterator(); var5.hasNext(); max = max > ver ? max : ver) {
+            String version = (String) var5.next();
             ver = Float.valueOf(version);
             versionValue[i++] = ver;
         }
@@ -130,7 +131,7 @@ public class ODataImpl extends OData {
     }
 
     public ServiceMetadata createServiceMetadata(CsdlEdmProvider edmProvider, List<EdmxReference> references) {
-        return this.createServiceMetadata(edmProvider, references, (ServiceMetadataETagSupport)null);
+        return this.createServiceMetadata(edmProvider, references, (ServiceMetadataETagSupport) null);
     }
 
     public ServiceMetadata createServiceMetadata(CsdlEdmProvider edmProvider, List<EdmxReference> references, ServiceMetadataETagSupport serviceMetadataETagSupport) {

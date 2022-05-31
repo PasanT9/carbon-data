@@ -12,6 +12,7 @@ import java.util.Set;
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
+
 import org.apache.olingo.commons.api.Constants;
 import org.apache.olingo.commons.api.data.AbstractEntityCollection;
 import org.apache.olingo.commons.api.data.ComplexValue;
@@ -75,6 +76,35 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
     private static final String NS_DATA = "http://docs.oasis-open.org/odata/ns/data";
 
     public ODataXmlSerializer() {
+    }
+
+    static String replaceInvalidCharacters(EdmPrimitiveType expectedType, String value, Boolean isUniCode, String invalidCharacterReplacement) {
+        if (expectedType instanceof EdmString && invalidCharacterReplacement != null && isUniCode != null && isUniCode) {
+            String s = value;
+            StringBuilder result = null;
+
+            for (int i = 0; i < s.length(); ++i) {
+                char c = s.charAt(i);
+                if (c <= ' ' && c != ' ' && c != '\n' && c != '\t' && c != '\r') {
+                    if (result == null) {
+                        result = new StringBuilder();
+                        result.append(s.substring(0, i));
+                    }
+
+                    result.append(invalidCharacterReplacement);
+                } else if (result != null) {
+                    result.append(c);
+                }
+            }
+
+            if (result == null) {
+                return value;
+            } else {
+                return result.toString();
+            }
+        } else {
+            return value;
+        }
     }
 
     public SerializerResult serviceDocument(ServiceMetadata metadata, String serviceRoot) throws SerializerException {
@@ -153,8 +183,8 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
                     writer.writeStartElement("details");
                     Iterator var6 = error.getDetails().iterator();
 
-                    while(var6.hasNext()) {
-                        ODataErrorDetail inner = (ODataErrorDetail)var6.next();
+                    while (var6.hasNext()) {
+                        ODataErrorDetail inner = (ODataErrorDetail) var6.next();
                         this.writeErrorDetails(inner.getCode(), inner.getMessage(), inner.getTarget(), writer);
                     }
 
@@ -238,9 +268,9 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
 
                 boolean writeOnlyRef = options != null && options.getWriteOnlyReferences();
                 if (options == null) {
-                    this.writeEntitySet(metadata, entityType, entitySet, (ExpandOption)null, (Integer)null, (SelectOption)null, (String)null, writer, writeOnlyRef, name, (Set)null);
+                    this.writeEntitySet(metadata, entityType, entitySet, (ExpandOption) null, (Integer) null, (SelectOption) null, (String) null, writer, writeOnlyRef, name, (Set) null);
                 } else {
-                    this.writeEntitySet(metadata, entityType, entitySet, options.getExpand(), (Integer)null, options.getSelect(), options.xml10InvalidCharReplacement(), writer, writeOnlyRef, name, (Set)null);
+                    this.writeEntitySet(metadata, entityType, entitySet, options.getExpand(), (Integer) null, options.getSelect(), options.xml10InvalidCharReplacement(), writer, writeOnlyRef, name, (Set) null);
                 }
 
                 writer.writeEndElement();
@@ -284,9 +314,9 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
 
             boolean writeOnlyRef = options != null && options.getWriteOnlyReferences();
             if (options == null) {
-                this.writeEntitySet(metadata, entityType, entitySet, (ExpandOption)null, (Integer)null, (SelectOption)null, (String)null, writer, writeOnlyRef, name, (Set)null);
+                this.writeEntitySet(metadata, entityType, entitySet, (ExpandOption) null, (Integer) null, (SelectOption) null, (String) null, writer, writeOnlyRef, name, (Set) null);
             } else {
-                this.writeEntitySet(metadata, entityType, entitySet, options.getExpand(), (Integer)null, options.getSelect(), options.xml10InvalidCharReplacement(), writer, writeOnlyRef, name, (Set)null);
+                this.writeEntitySet(metadata, entityType, entitySet, options.getExpand(), (Integer) null, options.getSelect(), options.xml10InvalidCharReplacement(), writer, writeOnlyRef, name, (Set) null);
             }
 
             if (options != null && options.getCount() != null && options.getCount().getValue() && entitySet.getCount() != null) {
@@ -325,7 +355,7 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
                 outputStream = buffer.getOutputStream();
                 XMLStreamWriter writer = XMLOutputFactory.newInstance().createXMLStreamWriter(outputStream, "UTF-8");
                 writer.writeStartDocument("UTF-8", "1.0");
-                this.writeEntity(metadata, entityType, entity, contextURL, options == null ? null : options.getExpand(), (Integer)null, options == null ? null : options.getSelect(), options == null ? null : options.xml10InvalidCharReplacement(), writer, true, false, name, (Set)null);
+                this.writeEntity(metadata, entityType, entity, contextURL, options == null ? null : options.getExpand(), (Integer) null, options == null ? null : options.getSelect(), options == null ? null : options.xml10InvalidCharReplacement(), writer, true, false, name, (Set) null);
                 writer.writeEndDocument();
                 writer.flush();
                 writer.close();
@@ -363,9 +393,9 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
     protected void writeEntitySet(ServiceMetadata metadata, EdmEntityType entityType, AbstractEntityCollection entitySet, ExpandOption expand, Integer toDepth, SelectOption select, String xml10InvalidCharReplacement, XMLStreamWriter writer, boolean writeOnlyRef, String name, Set<String> ancestors) throws XMLStreamException, SerializerException {
         Iterator var12 = entitySet.iterator();
 
-        while(var12.hasNext()) {
-            Entity entity = (Entity)var12.next();
-            this.writeEntity(metadata, entityType, entity, (ContextURL)null, expand, toDepth, select, xml10InvalidCharReplacement, writer, false, writeOnlyRef, name, ancestors);
+        while (var12.hasNext()) {
+            Entity entity = (Entity) var12.next();
+            this.writeEntity(metadata, entityType, entity, (ContextURL) null, expand, toDepth, select, xml10InvalidCharReplacement, writer, false, writeOnlyRef, name, ancestors);
         }
 
     }
@@ -390,7 +420,7 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
                 ancestors = new HashSet();
             }
 
-            cycle = !((Set)ancestors).add(this.getEntityId(entity, entityType, name));
+            cycle = !((Set) ancestors).add(this.getEntityId(entity, entityType, name));
         }
 
         if (!cycle && !writeOnlyRef) {
@@ -439,13 +469,13 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
 
                 Iterator var20 = entity.getMediaEditLinks().iterator();
 
-                while(var20.hasNext()) {
-                    Link link = (Link)var20.next();
+                while (var20.hasNext()) {
+                    Link link = (Link) var20.next();
                     this.writeLink(writer, link);
                 }
 
                 EdmEntityType resolvedType = this.resolveEntityType(metadata, entityType, entity.getType());
-                this.writeNavigationProperties(metadata, resolvedType, entity, expand, toDepth, xml10InvalidCharReplacement, (Set)ancestors, name, writer);
+                this.writeNavigationProperties(metadata, resolvedType, entity, expand, toDepth, xml10InvalidCharReplacement, (Set) ancestors, name, writer);
                 writer.writeStartElement("a", "category", "http://www.w3.org/2005/Atom");
                 writer.writeAttribute("scheme", "http://docs.oasis-open.org/odata/ns/scheme");
                 writer.writeAttribute("term", "#" + resolvedType.getFullQualifiedName().getFullQualifiedNameAsString());
@@ -466,7 +496,7 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
                 writer.writeEndElement();
             } finally {
                 if (!cycle && ancestors != null) {
-                    ((Set)ancestors).remove(this.getEntityId(entity, entityType, name));
+                    ((Set) ancestors).remove(this.getEntityId(entity, entityType, name));
                 }
 
             }
@@ -479,8 +509,8 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
     private void writeOperations(List<Operation> operations, XMLStreamWriter writer) throws XMLStreamException {
         Iterator var3 = operations.iterator();
 
-        while(var3.hasNext()) {
-            Operation operation = (Operation)var3.next();
+        while (var3.hasNext()) {
+            Operation operation = (Operation) var3.next();
             boolean action = operation.getType() != null && operation.getType() == Type.ACTION;
             writer.writeStartElement("m", action ? "action" : "function", "http://docs.oasis-open.org/odata/ns/metadata");
             writer.writeAttribute("metadata", operation.getMetadataAnchor());
@@ -515,7 +545,7 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
             if (derivedType == null) {
                 throw new SerializerException("EntityType not found", MessageKeys.UNKNOWN_TYPE, new String[]{derivedTypeName});
             } else {
-                for(EdmEntityType type = derivedType.getBaseType(); type != null; type = type.getBaseType()) {
+                for (EdmEntityType type = derivedType.getBaseType(); type != null; type = type.getBaseType()) {
                     if (type.getFullQualifiedName().getFullQualifiedNameAsString().equals(baseType.getFullQualifiedName().getFullQualifiedNameAsString())) {
                         return derivedType;
                     }
@@ -534,7 +564,7 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
             if (derivedType == null) {
                 throw new SerializerException("Complex Type not found", MessageKeys.UNKNOWN_TYPE, new String[]{derivedTypeName});
             } else {
-                for(EdmComplexType type = derivedType.getBaseType(); type != null; type = type.getBaseType()) {
+                for (EdmComplexType type = derivedType.getBaseType(); type != null; type = type.getBaseType()) {
                     if (type.getFullQualifiedName().getFullQualifiedNameAsString().equals(baseType.getFullQualifiedName().getFullQualifiedNameAsString())) {
                         return derivedType;
                     }
@@ -552,15 +582,15 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
         Set<String> selected = all ? new HashSet() : ExpandSelectHelper.getSelectedPropertyNames(select.getSelectItems());
         Iterator var9 = type.getPropertyNames().iterator();
 
-        while(true) {
+        while (true) {
             String propertyName;
             do {
                 if (!var9.hasNext()) {
                     return;
                 }
 
-                propertyName = (String)var9.next();
-            } while(!all && !((Set)selected).contains(propertyName));
+                propertyName = (String) var9.next();
+            } while (!all && !((Set) selected).contains(propertyName));
 
             EdmProperty edmProperty = type.getStructuralProperty(propertyName);
             Property property = this.findProperty(propertyName, properties);
@@ -574,8 +604,8 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
         if ((toDepth == null || toDepth <= 1) && (toDepth != null || !ExpandSelectHelper.hasExpand(expand))) {
             var19 = type.getNavigationPropertyNames().iterator();
 
-            while(var19.hasNext()) {
-                String propertyName = (String)var19.next();
+            while (var19.hasNext()) {
+                String propertyName = (String) var19.next();
                 this.writeLink(writer, this.getOrCreateLink(linked, propertyName));
             }
         } else {
@@ -583,13 +613,13 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
             Iterator var11 = type.getNavigationPropertyNames().iterator();
 
             label90:
-            while(true) {
-                while(true) {
+            while (true) {
+                while (true) {
                     if (!var11.hasNext()) {
                         break label90;
                     }
 
-                    String propertyName = (String)var11.next();
+                    String propertyName = (String) var11.next();
                     ExpandItem innerOptions = ExpandSelectHelper.getExpandItem(expand.getExpandItems(), propertyName);
                     if (expandAll == null && innerOptions == null && toDepth == null) {
                         this.writeLink(writer, this.getOrCreateLink(linked, propertyName));
@@ -619,7 +649,7 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
 
                         this.writeLink(writer, navigationLink, false);
                         writer.writeStartElement("m", "inline", "http://docs.oasis-open.org/odata/ns/metadata");
-                        this.writeExpandedNavigationProperty(metadata, property, navigationLink, (ExpandOption)childExpand, levels, innerOptions == null ? null : innerOptions.getSelectOption(), innerOptions == null ? null : innerOptions.getCountOption(), innerOptions == null ? false : innerOptions.hasCountPath(), innerOptions == null ? false : innerOptions.isRef(), xml10InvalidCharReplacement, ancestors, name, writer);
+                        this.writeExpandedNavigationProperty(metadata, property, navigationLink, (ExpandOption) childExpand, levels, innerOptions == null ? null : innerOptions.getSelectOption(), innerOptions == null ? null : innerOptions.getCountOption(), innerOptions == null ? false : innerOptions.hasCountPath(), innerOptions == null ? false : innerOptions.isRef(), xml10InvalidCharReplacement, ancestors, name, writer);
                         writer.writeEndElement();
                         writer.writeEndElement();
                     }
@@ -629,8 +659,8 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
 
         var19 = linked.getAssociationLinks().iterator();
 
-        while(var19.hasNext()) {
-            Link link = (Link)var19.next();
+        while (var19.hasNext()) {
+            Link link = (Link) var19.next();
             this.writeLink(writer, link);
         }
 
@@ -695,7 +725,7 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
                 writer.writeEndElement();
             }
         } else if (navigationLink != null && navigationLink.getInlineEntity() != null) {
-            this.writeEntity(metadata, property.getType(), navigationLink.getInlineEntity(), (ContextURL)null, innerExpand, toDepth, innerSelect, xml10InvalidCharReplacement, writer, false, writeOnlyRef, name, ancestors);
+            this.writeEntity(metadata, property.getType(), navigationLink.getInlineEntity(), (ContextURL) null, innerExpand, toDepth, innerSelect, xml10InvalidCharReplacement, writer, false, writeOnlyRef, name, ancestors);
         }
 
     }
@@ -738,15 +768,15 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
 
                 if (edmProperty.isCollection()) {
                     writer.writeAttribute("m", "http://docs.oasis-open.org/odata/ns/metadata", "type", this.collectionType(edmProperty.getType()));
-                    this.writeComplexCollection(metadata, (EdmComplexType)edmProperty.getType(), property, selectedPaths, xml10InvalidCharReplacement, writer);
+                    this.writeComplexCollection(metadata, (EdmComplexType) edmProperty.getType(), property, selectedPaths, xml10InvalidCharReplacement, writer);
                 } else {
                     this.writeComplex(metadata, edmProperty, property, selectedPaths, xml10InvalidCharReplacement, writer);
                 }
             } else if (edmProperty.isCollection()) {
                 writer.writeAttribute("m", "http://docs.oasis-open.org/odata/ns/metadata", "type", edmProperty.isPrimitive() ? "#Collection(" + edmProperty.getType().getName() + ")" : this.collectionType(edmProperty.getType()));
-                this.writePrimitiveCollection((EdmPrimitiveType)edmProperty.getType(), property, edmProperty.isNullable(), edmProperty.getMaxLength(), edmProperty.getPrecision(), edmProperty.getScale(), edmProperty.isUnicode(), xml10InvalidCharReplacement, writer);
+                this.writePrimitiveCollection((EdmPrimitiveType) edmProperty.getType(), property, edmProperty.isNullable(), edmProperty.getMaxLength(), edmProperty.getPrecision(), edmProperty.getScale(), edmProperty.isUnicode(), xml10InvalidCharReplacement, writer);
             } else {
-                this.writePrimitive((EdmPrimitiveType)edmProperty.getType(), property, edmProperty.isNullable(), edmProperty.getMaxLength(), edmProperty.getPrecision(), edmProperty.getScale(), edmProperty.isUnicode(), xml10InvalidCharReplacement, writer);
+                this.writePrimitive((EdmPrimitiveType) edmProperty.getType(), property, edmProperty.isNullable(), edmProperty.getMaxLength(), edmProperty.getPrecision(), edmProperty.getScale(), edmProperty.isUnicode(), xml10InvalidCharReplacement, writer);
             }
 
         } catch (EdmPrimitiveTypeException var8) {
@@ -755,16 +785,16 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
     }
 
     private void writeComplex(ServiceMetadata metadata, EdmProperty edmProperty, Property property, Set<List<String>> selectedPaths, String xml10InvalidCharReplacement, XMLStreamWriter writer) throws XMLStreamException, SerializerException {
-        writer.writeAttribute("m", "http://docs.oasis-open.org/odata/ns/metadata", "type", "#" + this.complexType(metadata, (EdmComplexType)edmProperty.getType(), property.getType()));
+        writer.writeAttribute("m", "http://docs.oasis-open.org/odata/ns/metadata", "type", "#" + this.complexType(metadata, (EdmComplexType) edmProperty.getType(), property.getType()));
         String derivedName = property.getType();
-        EdmComplexType resolvedType = this.resolveComplexType(metadata, (EdmComplexType)edmProperty.getType(), derivedName);
+        EdmComplexType resolvedType = this.resolveComplexType(metadata, (EdmComplexType) edmProperty.getType(), derivedName);
         this.writeComplexValue(metadata, resolvedType, property.asComplex().getValue(), selectedPaths, xml10InvalidCharReplacement, writer);
     }
 
     private void writePrimitiveCollection(EdmPrimitiveType type, Property property, Boolean isNullable, Integer maxLength, Integer precision, Integer scale, Boolean isUnicode, String xml10InvalidCharReplacement, XMLStreamWriter writer) throws XMLStreamException, EdmPrimitiveTypeException, SerializerException {
         Iterator var10 = property.asCollection().iterator();
 
-        while(var10.hasNext()) {
+        while (var10.hasNext()) {
             Object value = var10.next();
             writer.writeStartElement("m", "element", "http://docs.oasis-open.org/odata/ns/metadata");
             switch (property.getValueType()) {
@@ -785,10 +815,10 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
     private void writeComplexCollection(ServiceMetadata metadata, EdmComplexType type, Property property, Set<List<String>> selectedPaths, String xml10InvalidCharReplacement, XMLStreamWriter writer) throws XMLStreamException, SerializerException {
         Iterator var8 = property.asCollection().iterator();
 
-        while(var8.hasNext()) {
+        while (var8.hasNext()) {
             Object value = var8.next();
             writer.writeStartElement("m", "element", "http://docs.oasis-open.org/odata/ns/metadata");
-            String typeName = ((ComplexValue)value).getTypeName();
+            String typeName = ((ComplexValue) value).getTypeName();
             String propertyType = typeName != null ? typeName : property.getType();
             if (this.derivedComplexType(type, propertyType) != null) {
                 writer.writeAttribute("m", "http://docs.oasis-open.org/odata/ns/metadata", "type", propertyType);
@@ -803,7 +833,7 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
 
             switch (property.getValueType()) {
                 case COLLECTION_COMPLEX:
-                    this.writeComplexValue(metadata, complexType, ((ComplexValue)value).getValue(), selectedPaths, xml10InvalidCharReplacement, writer);
+                    this.writeComplexValue(metadata, complexType, ((ComplexValue) value).getValue(), selectedPaths, xml10InvalidCharReplacement, writer);
                     writer.writeEndElement();
                     break;
                 default:
@@ -848,7 +878,7 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
     protected void writeComplexValue(ServiceMetadata metadata, EdmComplexType type, List<Property> properties, Set<List<String>> selectedPaths, String xml10InvalidCharReplacement, XMLStreamWriter writer) throws XMLStreamException, SerializerException {
         Iterator var7 = type.getPropertyNames().iterator();
 
-        while(true) {
+        while (true) {
             String propertyName;
             Property property;
             do {
@@ -856,11 +886,11 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
                     return;
                 }
 
-                propertyName = (String)var7.next();
+                propertyName = (String) var7.next();
                 property = this.findProperty(propertyName, properties);
-            } while(selectedPaths != null && !ExpandSelectHelper.isSelected(selectedPaths, propertyName));
+            } while (selectedPaths != null && !ExpandSelectHelper.isSelected(selectedPaths, propertyName));
 
-            this.writeProperty(metadata, (EdmProperty)type.getProperty(propertyName), property, selectedPaths == null ? null : ExpandSelectHelper.getReducedSelectedPaths(selectedPaths, propertyName), xml10InvalidCharReplacement, writer);
+            this.writeProperty(metadata, (EdmProperty) type.getProperty(propertyName), property, selectedPaths == null ? null : ExpandSelectHelper.getReducedSelectedPaths(selectedPaths, propertyName), xml10InvalidCharReplacement, writer);
         }
     }
 
@@ -873,8 +903,8 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
                 return null;
             }
 
-            property = (Property)var3.next();
-        } while(!propertyName.equals(property.getName()));
+            property = (Property) var3.next();
+        } while (!propertyName.equals(property.getName()));
 
         return property;
     }
@@ -1037,7 +1067,7 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
             writer.writeAttribute("m", "http://docs.oasis-open.org/odata/ns/metadata", "type", this.collectionType(type));
             writer.writeAttribute("m", "http://docs.oasis-open.org/odata/ns/metadata", "context", ContextURLBuilder.create(contextURL).toASCIIString());
             this.writeMetadataETag(metadata, writer);
-            this.writeComplexCollection(metadata, type, property, (Set)null, options == null ? null : options.xml10InvalidCharReplacement(), writer);
+            this.writeComplexCollection(metadata, type, property, (Set) null, options == null ? null : options.xml10InvalidCharReplacement(), writer);
             writer.writeEndElement();
             writer.writeEndDocument();
             writer.flush();
@@ -1133,8 +1163,8 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
 
             Iterator var7 = entitySet.iterator();
 
-            while(var7.hasNext()) {
-                Entity entity = (Entity)var7.next();
+            while (var7.hasNext()) {
+                Entity entity = (Entity) var7.next();
                 this.writeReference(entity, options == null ? null : options.getContextURL(), writer, false);
             }
 
@@ -1167,34 +1197,5 @@ public class ODataXmlSerializer extends AbstractODataSerializer {
         writer.writeAttribute("rel", "next");
         writer.writeAttribute("href", entitySet.getNext().toASCIIString());
         writer.writeEndElement();
-    }
-
-    static String replaceInvalidCharacters(EdmPrimitiveType expectedType, String value, Boolean isUniCode, String invalidCharacterReplacement) {
-        if (expectedType instanceof EdmString && invalidCharacterReplacement != null && isUniCode != null && isUniCode) {
-            String s = value;
-            StringBuilder result = null;
-
-            for(int i = 0; i < s.length(); ++i) {
-                char c = s.charAt(i);
-                if (c <= ' ' && c != ' ' && c != '\n' && c != '\t' && c != '\r') {
-                    if (result == null) {
-                        result = new StringBuilder();
-                        result.append(s.substring(0, i));
-                    }
-
-                    result.append(invalidCharacterReplacement);
-                } else if (result != null) {
-                    result.append(c);
-                }
-            }
-
-            if (result == null) {
-                return value;
-            } else {
-                return result.toString();
-            }
-        } else {
-            return value;
-        }
     }
 }

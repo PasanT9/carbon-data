@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
+
 import org.apache.olingo.commons.api.data.EntityIterator;
 import org.apache.olingo.commons.api.edm.EdmEntityType;
 import org.apache.olingo.commons.api.ex.ODataRuntimeException;
@@ -21,20 +22,20 @@ import org.apache.olingo.server.core.serializer.SerializerStreamResultImpl;
 public class ODataWritableContent implements ODataContent {
     private StreamContent streamContent;
 
-    public void write(WritableByteChannel writeChannel) {
-        this.streamContent.write(Channels.newOutputStream(writeChannel));
-    }
-
-    public void write(OutputStream stream) {
-        this.write(Channels.newChannel(stream));
-    }
-
     private ODataWritableContent(StreamContent streamContent) {
         this.streamContent = streamContent;
     }
 
     public static ODataWritableContentBuilder with(EntityIterator iterator, EdmEntityType entityType, ODataSerializer serializer, ServiceMetadata metadata, EntityCollectionSerializerOptions options) {
         return new ODataWritableContentBuilder(iterator, entityType, serializer, metadata, options);
+    }
+
+    public void write(WritableByteChannel writeChannel) {
+        this.streamContent.write(Channels.newOutputStream(writeChannel));
+    }
+
+    public void write(OutputStream stream) {
+        this.write(Channels.newChannel(stream));
     }
 
     public static class ODataWritableContentBuilder {
@@ -54,10 +55,10 @@ public class ODataWritableContent implements ODataContent {
 
         public ODataContent buildContent() {
             if (this.serializer instanceof ODataJsonSerializer) {
-                StreamContent input = new StreamContentForJson(this.entities, this.entityType, (ODataJsonSerializer)this.serializer, this.metadata, this.options);
+                StreamContent input = new StreamContentForJson(this.entities, this.entityType, (ODataJsonSerializer) this.serializer, this.metadata, this.options);
                 return new ODataWritableContent(input);
             } else if (this.serializer instanceof ODataXmlSerializer) {
-                StreamContentForXml input = new StreamContentForXml(this.entities, this.entityType, (ODataXmlSerializer)this.serializer, this.metadata, this.options);
+                StreamContentForXml input = new StreamContentForXml(this.entities, this.entityType, (ODataXmlSerializer) this.serializer, this.metadata, this.options);
                 return new ODataWritableContent(input);
             } else {
                 throw new ODataRuntimeException("No suitable serializer found");

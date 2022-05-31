@@ -39,74 +39,60 @@ import java.util.*;
  */
 public class CassandraDataHandler implements ODataDataHandler {
 
-    /**
-     * Table metadata.
-     */
-    private Map<String, Map<String, DataColumn>> tableMetaData;
-
-    /**
-     * Primary Keys of the Tables (Map<Table Name, List>).
-     */
-    private Map<String, List<String>> primaryKeys;
-
+    private static final int RECORD_INSERT_STATEMENTS_CACHE_SIZE = 10000;
     /**
      * Config ID.
      */
     private final String configID;
-
-    /**
-     * List of Tables in the Database.
-     */
-    private List<String> tableList;
-
     /**
      * Cassandra session.
      */
     private final Session session;
-
-
     /**
      * Cassandra keyspace.
      */
     private final String keyspace;
-
-    /**
-     * Preferred buffer size
-     */
-    private int bufferSize;
-
     /**
      * Default buffer size
      */
     private final int DEFAULT_BUFFER_SIZE = 1000;
-
+    /**
+     * Table metadata.
+     */
+    private Map<String, Map<String, DataColumn>> tableMetaData;
+    /**
+     * Primary Keys of the Tables (Map<Table Name, List>).
+     */
+    private Map<String, List<String>> primaryKeys;
+    /**
+     * List of Tables in the Database.
+     */
+    private List<String> tableList;
+    /**
+     * Preferred buffer size
+     */
+    private int bufferSize;
     /**
      * Store Result when pagination enabled
      */
     private ResultSet streamResultSet;
-
     /**
      * List of table rows to sort
      */
     private ArrayList<ODataEntry> entryList;
-
     private ThreadLocal<Boolean> transactionAvailable = new ThreadLocal<Boolean>() {
         protected synchronized Boolean initialValue() {
             return false;
         }
     };
+    private Map<String, PreparedStatement> preparedStatementMap = Collections.synchronizedMap(new LinkedHashMap<String, PreparedStatement>() {
+        private static final long serialVersionUID = 1L;
 
-    private static final int RECORD_INSERT_STATEMENTS_CACHE_SIZE = 10000;
-
-    private Map<String, PreparedStatement> preparedStatementMap =
-            Collections.synchronizedMap(new LinkedHashMap<String, PreparedStatement>() {
-                private static final long serialVersionUID = 1L;
-
-                @Override
-                protected boolean removeEldestEntry(final Map.Entry<String, PreparedStatement> eldest) {
-                    return super.size() > RECORD_INSERT_STATEMENTS_CACHE_SIZE;
-                }
-            });
+        @Override
+        protected boolean removeEldestEntry(final Map.Entry<String, PreparedStatement> eldest) {
+            return super.size() > RECORD_INSERT_STATEMENTS_CACHE_SIZE;
+        }
+    });
 
     public CassandraDataHandler(String configID, Session session, String keyspace) {
         this.configID = configID;
@@ -140,7 +126,7 @@ public class CassandraDataHandler implements ODataDataHandler {
 
         // Read table with pagination enabled
         // Driver will only load the next page once all the rows of the current page is read.
-        if(this.streamResultSet == null) {
+        if (this.streamResultSet == null) {
             Statement statement = new SimpleStatement("Select * from " + this.keyspace + "." + tableName);
             statement.setFetchSize(this.bufferSize);
             this.streamResultSet = session.execute(statement);
@@ -159,7 +145,7 @@ public class CassandraDataHandler implements ODataDataHandler {
             ODataEntry dataEntry = createDataEntryFromRow(tableName, iterator.next(), columnDefinitions);
             entryList.add(dataEntry);
             count++;
-            if(count >= this.bufferSize) {
+            if (count >= this.bufferSize) {
                 break;
             }
         }
@@ -179,7 +165,7 @@ public class CassandraDataHandler implements ODataDataHandler {
     public List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault {
 
         // Read the entire table
-        if(this.entryList == null) {
+        if (this.entryList == null) {
             this.entryList = new ArrayList<>();
 
             Statement statement = new SimpleStatement("Select * from " + this.keyspace + "." + tableName);
@@ -205,7 +191,7 @@ public class CassandraDataHandler implements ODataDataHandler {
             resultSet.add(iterator.next());
             iterator.remove();
             count++;
-            if(count >= this.bufferSize) {
+            if (count >= this.bufferSize) {
                 break;
             }
         }
@@ -215,8 +201,7 @@ public class CassandraDataHandler implements ODataDataHandler {
 
     @Override
     public List<ODataEntry> readTableWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
-        List<ColumnMetadata> cassandraTableMetaData = this.session.getCluster().getMetadata().getKeyspace(this.keyspace)
-                                                                  .getTable(tableName).getColumns();
+        List<ColumnMetadata> cassandraTableMetaData = this.session.getCluster().getMetadata().getKeyspace(this.keyspace).getTable(tableName).getColumns();
         List<String> pKeys = this.primaryKeys.get(tableName);
         String query = createReadSqlWithKeys(tableName, keys);
         List<Object> values = new ArrayList<>();
@@ -243,11 +228,9 @@ public class CassandraDataHandler implements ODataDataHandler {
 
     @Override
     public ODataEntry insertEntityToTable(String tableName, ODataEntry entity) throws ODataServiceFault {
-        List<ColumnMetadata> cassandraTableMetaData = this.session.getCluster().getMetadata().getKeyspace(this.keyspace)
-                                                                  .getTable(tableName).getColumns();
+        List<ColumnMetadata> cassandraTableMetaData = this.session.getCluster().getMetadata().getKeyspace(this.keyspace).getTable(tableName).getColumns();
         for (String pkey : this.primaryKeys.get(tableName)) {
-            if (this.tableMetaData.get(tableName).get(pkey).getColumnType().equals(ODataDataType.GUID) &&
-                entity.getValue(pkey) == null) {
+            if (this.tableMetaData.get(tableName).get(pkey).getColumnType().equals(ODataDataType.GUID) && entity.getValue(pkey) == null) {
                 UUID uuid = UUID.randomUUID();
                 entity.addValue(pkey, uuid.toString());
             }
@@ -280,8 +263,7 @@ public class CassandraDataHandler implements ODataDataHandler {
     }
 
     private boolean deleteEntityTableNonTransactional(String tableName, ODataEntry entity) throws ODataServiceFault {
-        List<ColumnMetadata> cassandraTableMetaData = this.session.getCluster().getMetadata().getKeyspace(this.keyspace)
-                                                                  .getTable(tableName).getColumns();
+        List<ColumnMetadata> cassandraTableMetaData = this.session.getCluster().getMetadata().getKeyspace(this.keyspace).getTable(tableName).getColumns();
         List<String> pKeys = this.primaryKeys.get(tableName);
         String query = createDeleteCQL(tableName);
         List<Object> values = new ArrayList<>();
@@ -300,8 +282,7 @@ public class CassandraDataHandler implements ODataDataHandler {
     }
 
     private boolean deleteEntityInTableTransactional(String tableName, ODataEntry entity) throws ODataServiceFault {
-        List<ColumnMetadata> cassandraTableMetaData = this.session.getCluster().getMetadata().getKeyspace(this.keyspace)
-                                                                  .getTable(tableName).getColumns();
+        List<ColumnMetadata> cassandraTableMetaData = this.session.getCluster().getMetadata().getKeyspace(this.keyspace).getTable(tableName).getColumns();
         List<String> pKeys = this.primaryKeys.get(tableName);
         String query = createDeleteTransactionalCQL(tableName, entity);
         List<Object> values = new ArrayList<>();
@@ -326,8 +307,7 @@ public class CassandraDataHandler implements ODataDataHandler {
 
     @Override
     public boolean updateEntityInTable(String tableName, ODataEntry newProperties) throws ODataServiceFault {
-        List<ColumnMetadata> cassandraTableMetaData = this.session.getCluster().getMetadata().getKeyspace(this.keyspace)
-                                                                  .getTable(tableName).getColumns();
+        List<ColumnMetadata> cassandraTableMetaData = this.session.getCluster().getMetadata().getKeyspace(this.keyspace).getTable(tableName).getColumns();
         List<String> pKeys = this.primaryKeys.get(tableName);
         String query = createUpdateEntityCQL(tableName, newProperties);
         List<Object> values = new ArrayList<>();
@@ -350,10 +330,8 @@ public class CassandraDataHandler implements ODataDataHandler {
         return result.wasApplied();
     }
 
-    public boolean updateEntityInTableTransactional(String tableName, ODataEntry oldProperties,
-                                                    ODataEntry newProperties) throws ODataServiceFault {
-        List<ColumnMetadata> cassandraTableMetaData =
-                this.session.getCluster().getMetadata().getKeyspace(this.keyspace).getTable(tableName).getColumns();
+    public boolean updateEntityInTableTransactional(String tableName, ODataEntry oldProperties, ODataEntry newProperties) throws ODataServiceFault {
+        List<ColumnMetadata> cassandraTableMetaData = this.session.getCluster().getMetadata().getKeyspace(this.keyspace).getTable(tableName).getColumns();
         List<String> pKeys = this.primaryKeys.get(tableName);
         String query = createUpdateEntityTransactionalCQL(tableName, oldProperties, newProperties);
         List<Object> values = new ArrayList<>();
@@ -420,14 +398,12 @@ public class CassandraDataHandler implements ODataDataHandler {
     }
 
     @Override
-    public void updateReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable,
-                                ODataEntry navigationTableKeys) throws ODataServiceFault {
+    public void updateReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable, ODataEntry navigationTableKeys) throws ODataServiceFault {
         throw new ODataServiceFault("Cassandra datasources doesn't support references.");
     }
 
     @Override
-    public void deleteReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable,
-                                ODataEntry navigationTableKeys) throws ODataServiceFault {
+    public void deleteReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable, ODataEntry navigationTableKeys) throws ODataServiceFault {
         throw new ODataServiceFault("Cassandra datasources doesn't support references.");
     }
 
@@ -454,8 +430,7 @@ public class CassandraDataHandler implements ODataDataHandler {
      * @return DataEntry
      * @throws ODataServiceFault
      */
-    private ODataEntry createDataEntryFromRow(String tableName, Row row, ColumnDefinitions columnDefinitions)
-            throws ODataServiceFault {
+    private ODataEntry createDataEntryFromRow(String tableName, Row row, ColumnDefinitions columnDefinitions) throws ODataServiceFault {
         String paramValue;
         ODataEntry entry = new ODataEntry();
         //Creating a unique string to represent the
@@ -550,8 +525,7 @@ public class CassandraDataHandler implements ODataDataHandler {
 
     private List<String> generateTableList() {
         List<String> tableList = new ArrayList<>();
-        for (TableMetadata tableMetadata : this.session.getCluster().getMetadata().getKeyspace(this.keyspace)
-                                                       .getTables()) {
+        for (TableMetadata tableMetadata : this.session.getCluster().getMetadata().getKeyspace(this.keyspace).getTables()) {
             tableList.add(tableMetadata.getName());
         }
         return tableList;
@@ -561,8 +535,7 @@ public class CassandraDataHandler implements ODataDataHandler {
         Map<String, List<String>> primaryKeyMap = new HashMap<>();
         for (String tableName : this.tableList) {
             List<String> primaryKey = new ArrayList<>();
-            for (ColumnMetadata columnMetadata : this.session.getCluster().getMetadata().getKeyspace(this.keyspace)
-                                                             .getTable(tableName).getPrimaryKey()) {
+            for (ColumnMetadata columnMetadata : this.session.getCluster().getMetadata().getKeyspace(this.keyspace).getTable(tableName).getPrimaryKey()) {
                 primaryKey.add(columnMetadata.getName());
             }
             primaryKeyMap.put(tableName, primaryKey);
@@ -574,15 +547,12 @@ public class CassandraDataHandler implements ODataDataHandler {
         Map<String, Map<String, DataColumn>> metadata = new HashMap<>();
         for (String tableName : this.tableList) {
             Map<String, DataColumn> dataColumnMap = new HashMap<>();
-            for (ColumnMetadata columnMetadata : this.session.getCluster().getMetadata().getKeyspace(this.keyspace)
-                                                             .getTable(tableName).getColumns()) {
+            for (ColumnMetadata columnMetadata : this.session.getCluster().getMetadata().getKeyspace(this.keyspace).getTable(tableName).getColumns()) {
                 DataColumn dataColumn;
                 if (this.primaryKeys.get(tableName).contains(columnMetadata.getName())) {
-                    dataColumn = new DataColumn(columnMetadata.getName(),
-                                                getDataType(columnMetadata.getType().getName()), false);
+                    dataColumn = new DataColumn(columnMetadata.getName(), getDataType(columnMetadata.getType().getName()), false);
                 } else {
-                    dataColumn = new DataColumn(columnMetadata.getName(),
-                                                getDataType(columnMetadata.getType().getName()), true);
+                    dataColumn = new DataColumn(columnMetadata.getName(), getDataType(columnMetadata.getType().getName()), true);
                 }
                 dataColumnMap.put(dataColumn.getColumnName(), dataColumn);
             }
@@ -591,8 +561,7 @@ public class CassandraDataHandler implements ODataDataHandler {
         return metadata;
     }
 
-    private void bindParams(String columnName, String value, List<Object> values, List<ColumnMetadata> metaData)
-            throws ODataServiceFault {
+    private void bindParams(String columnName, String value, List<Object> values, List<ColumnMetadata> metaData) throws ODataServiceFault {
         DataType.Name dataType = null;
         for (ColumnMetadata columnMetadata : metaData) {
             if (columnMetadata.getName().equals(columnName)) {
@@ -601,17 +570,16 @@ public class CassandraDataHandler implements ODataDataHandler {
             }
         }
         if (dataType == null) {
-            throw new ODataServiceFault("Error occurred when binding data. DataType was missing for " +
-                                        columnName + " column.");
+            throw new ODataServiceFault("Error occurred when binding data. DataType was missing for " + columnName + " column.");
         }
         try {
             switch (dataType) {
                 case ASCII:
-                /* fall through */
+                    /* fall through */
                 case TEXT:
-				/* fall through */
+                    /* fall through */
                 case VARCHAR:
-				/* fall through */
+                    /* fall through */
                 case TIMEUUID:
                     values.add(value);
                     break;
@@ -622,7 +590,7 @@ public class CassandraDataHandler implements ODataDataHandler {
                     values.add(value == null ? null : Long.parseLong(value));
                     break;
                 case VARINT:
-				/* fall through */
+                    /* fall through */
                 case COUNTER:
                     values.add(value == null ? null : value);
                     break;
@@ -666,11 +634,11 @@ public class CassandraDataHandler implements ODataDataHandler {
         ODataDataType dataType;
         switch (dataTypeName) {
             case ASCII:
-				/* fall through */
+                /* fall through */
             case TEXT:
-				/* fall through */
+                /* fall through */
             case VARCHAR:
-				/* fall through */
+                /* fall through */
             case TIMEUUID:
                 dataType = ODataDataType.STRING;
                 break;
@@ -678,9 +646,9 @@ public class CassandraDataHandler implements ODataDataHandler {
                 dataType = ODataDataType.GUID;
                 break;
             case BIGINT:
-				/* fall through */
+                /* fall through */
             case VARINT:
-				/* fall through */
+                /* fall through */
             case COUNTER:
                 dataType = ODataDataType.INT64;
                 break;
@@ -691,7 +659,7 @@ public class CassandraDataHandler implements ODataDataHandler {
                 dataType = ODataDataType.BOOLEAN;
                 break;
             case DECIMAL:
-				/* fall through */
+                /* fall through */
             case FLOAT:
                 dataType = ODataDataType.DECIMAL;
                 break;
@@ -759,8 +727,7 @@ public class CassandraDataHandler implements ODataDataHandler {
      * @param newProperties update entry
      * @return sql Query
      */
-    private String createUpdateEntityTransactionalCQL(String tableName, ODataEntry oldProperties,
-                                                      ODataEntry newProperties) {
+    private String createUpdateEntityTransactionalCQL(String tableName, ODataEntry oldProperties, ODataEntry newProperties) {
         List<String> pKeys = this.primaryKeys.get(tableName);
         StringBuilder sql = new StringBuilder();
         sql.append("UPDATE ").append(tableName).append(" SET ");

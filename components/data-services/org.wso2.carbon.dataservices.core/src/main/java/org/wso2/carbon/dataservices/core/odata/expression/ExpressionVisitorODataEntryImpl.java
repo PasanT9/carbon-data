@@ -43,8 +43,8 @@ import java.util.*;
 
 public class ExpressionVisitorODataEntryImpl implements ExpressionVisitor<VisitorOperand> {
 
-    final private ODataEntry entity;
     static private Collection<DataColumn> tableMetaData;
+    final private ODataEntry entity;
 
     public ExpressionVisitorODataEntryImpl(final ODataEntry entity) {
         this.entity = entity;
@@ -79,11 +79,11 @@ public class ExpressionVisitorODataEntryImpl implements ExpressionVisitor<Visito
             case ADD:
                 /* fall through */
             case SUB:
-				/* fall through */
+                /* fall through */
             case MUL:
-				/* fall through */
+                /* fall through */
             case DIV:
-				/* fall through */
+                /* fall through */
             case MOD:
                 return binaryOperator.arithmeticOperator(operator);
             default:
@@ -191,12 +191,11 @@ public class ExpressionVisitorODataEntryImpl implements ExpressionVisitor<Visito
         for (DataColumn column : this.tableMetaData) {
             String columnName = column.getColumnName();
             try {
-                if(columnName.equals(edmProperty.getName())) {
+                if (columnName.equals(edmProperty.getName())) {
                     currentProperty = ODataAdapter.createPrimitive(column.getColumnType(), columnName, this.entity.getValue(columnName));
                     break;
                 }
-            }
-            catch (ParseException | ODataServiceFault e){
+            } catch (ParseException | ODataServiceFault e) {
                 e.printStackTrace();
             }
         }
@@ -229,6 +228,6 @@ public class ExpressionVisitorODataEntryImpl implements ExpressionVisitor<Visito
 
     private VisitorOperand throwNotImplemented() throws ODataApplicationException {
         throw new ODataApplicationException("Not implemented", HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(),
-                                            Locale.ROOT);
+                Locale.ROOT);
     }
 }
