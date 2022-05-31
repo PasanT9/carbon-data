@@ -18,17 +18,15 @@
 
 package org.wso2.carbon.dataservices.core.odata;
 
+//import org.wso2.carbon.dataservices.core.odata.serializer.MyOData;
+
 import org.apache.axis2.databinding.utils.ConverterUtil;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.olingo.commons.api.Constants;
-import org.apache.olingo.commons.api.data.Entity;
-import org.apache.olingo.commons.api.data.EntityCollection;
-import org.apache.olingo.commons.api.data.Link;
-import org.apache.olingo.commons.api.data.Property;
-import org.apache.olingo.commons.api.data.ValueType;
+import org.apache.olingo.commons.api.data.*;
 import org.apache.olingo.commons.api.edm.EdmBindingTarget;
 import org.apache.olingo.commons.api.edm.EdmElement;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
@@ -46,18 +44,15 @@ import org.apache.olingo.commons.api.edm.constants.EdmTypeKind;
 import org.apache.olingo.commons.api.edm.provider.CsdlEdmProvider;
 import org.apache.olingo.commons.api.edm.provider.CsdlProperty;
 import org.apache.olingo.commons.api.edm.provider.CsdlPropertyRef;
+import org.apache.olingo.commons.api.edmx.EdmxReference;
 import org.apache.olingo.commons.api.format.ContentType;
 import org.apache.olingo.commons.api.http.HttpHeader;
 import org.apache.olingo.commons.api.http.HttpMethod;
 import org.apache.olingo.commons.api.http.HttpStatusCode;
-import org.apache.olingo.server.api.OData;
-import org.apache.olingo.server.api.ODataApplicationException;
-import org.apache.olingo.server.api.ODataLibraryException;
-import org.apache.olingo.server.api.ODataRequest;
-import org.apache.olingo.server.api.ODataResponse;
-import org.apache.olingo.server.api.ODataServerError;
-import org.apache.olingo.server.api.ServiceMetadata;
+import org.apache.olingo.server.api.*;
+import org.apache.olingo.server.api.serializer.EntityCollectionSerializerOptions;
 import org.apache.olingo.server.api.serializer.SerializerException;
+import org.apache.olingo.server.api.serializer.SerializerStreamResult;
 import org.apache.olingo.server.api.uri.UriInfo;
 import org.apache.olingo.server.api.uri.UriInfoResource;
 import org.apache.olingo.server.api.uri.UriParameter;
@@ -66,14 +61,8 @@ import org.apache.olingo.server.api.uri.UriResourceAction;
 import org.apache.olingo.server.api.uri.UriResourceEntitySet;
 import org.apache.olingo.server.api.uri.UriResourceFunction;
 import org.apache.olingo.server.api.uri.UriResourceNavigation;
-import org.apache.olingo.server.api.uri.queryoption.CountOption;
-import org.apache.olingo.server.api.uri.queryoption.ExpandItem;
-import org.apache.olingo.server.api.uri.queryoption.ExpandOption;
-import org.apache.olingo.server.api.uri.queryoption.FilterOption;
-import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
-import org.apache.olingo.server.api.uri.queryoption.SkipOption;
-import org.apache.olingo.server.api.uri.queryoption.SkipTokenOption;
-import org.apache.olingo.server.api.uri.queryoption.TopOption;
+import org.apache.olingo.server.api.uri.queryoption.*;
+import org.apache.olingo.server.api.uri.queryoption.expression.ExpressionVisitException;
 import org.apache.olingo.server.core.ContentNegotiatorException;
 import org.apache.olingo.server.core.ServiceHandler;
 import org.apache.olingo.server.core.requests.ActionRequest;
@@ -98,6 +87,11 @@ import org.apache.olingo.server.core.uri.parser.UriParserException;
 import org.wso2.carbon.dataservices.common.DBConstants;
 import org.wso2.carbon.dataservices.core.DataServiceFault;
 import org.wso2.carbon.dataservices.core.engine.DataEntry;
+import org.wso2.carbon.dataservices.core.odata.expression.ExpressionVisitorImpl;
+import org.wso2.carbon.dataservices.core.odata.expression.operand.TypedOperand;
+import org.wso2.carbon.dataservices.core.odata.expression.operand.VisitorOperand;
+import org.wso2.carbon.dataservices.core.odata.serializer.OData;
+import org.wso2.carbon.dataservices.core.odata.serializer.ODataSerializer;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -105,15 +99,17 @@ import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.ByteBuffer;
+import java.nio.channels.WritableByteChannel;
 import java.sql.Types;
 import java.text.ParseException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Iterator;
 
 /**
  * This class implements the olingo serviceHandler to process requests and response.
@@ -126,18 +122,20 @@ public class ODataAdapter implements ServiceHandler {
 
     private static final String EMPTY_E_TAG = "*";
 
-    private static final String ODATA_MAX_PAGE_SIZE = "odata.maxpagesize";
-
     /**
-     * Service metadata of the odata service.
+     * Default max page size
      */
-    private ServiceMetadata serviceMetadata;
+    private static final int DEFAULT_MAX_PAGE_SIZE = 10;
 
+    private static final String ODATA_MAX_PAGE_SIZE = "odata.maxpagesize";
     /**
      * OData handler of the odata service.
      */
     private final ODataDataHandler dataHandler;
-
+    /**
+     * Service metadata of the odata service.
+     */
+    private ServiceMetadata serviceMetadata;
     /**
      * EDM provider of the odata service.
      */
@@ -154,34 +152,221 @@ public class ODataAdapter implements ServiceHandler {
         }
     };
 
+
     public ODataAdapter(ODataDataHandler dataHandler, String namespace, String configID) throws ODataServiceFault {
         this.dataHandler = dataHandler;
         this.namespace = namespace;
         this.edmProvider = initializeEdmProvider(configID);
     }
 
+    public static EdmEntitySet getNavigationTargetEntitySet(EdmEntitySet startEdmEntitySet, EdmNavigationProperty edmNavigationProperty) throws ODataApplicationException {
+
+        EdmEntitySet navigationTargetEntitySet = null;
+
+
+        String navPropName = edmNavigationProperty.getName();
+        EdmBindingTarget edmBindingTarget = startEdmEntitySet.getRelatedBindingTarget(navPropName);
+        if (edmBindingTarget == null) {
+            throw new ODataApplicationException("Not supported.", HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ROOT);
+        }
+
+        if (edmBindingTarget instanceof EdmEntitySet) {
+            navigationTargetEntitySet = (EdmEntitySet) edmBindingTarget;
+        } else {
+            throw new ODataApplicationException("Not supported.", HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ROOT);
+        }
+
+        return navigationTargetEntitySet;
+    }
+
+    public static byte[] getBytesFromBase64String(String base64Str) throws ODataServiceFault {
+        try {
+            return Base64.decodeBase64(base64Str.getBytes(DBConstants.DEFAULT_CHAR_SET_TYPE));
+        } catch (Exception e) {
+            throw new ODataServiceFault(e.getMessage());
+        }
+    }
+
+    /**
+     * This method creates primitive type property.
+     *
+     * @param columnType Data type of the column - java.sql.Types
+     * @param name       Name of the column
+     * @param paramValue String value
+     * @return Property
+     * @throws ODataServiceFault
+     * @see Types
+     * @see Property
+     */
+    public static Property createPrimitive(final DataColumn.ODataDataType columnType, final String name, final String paramValue) throws ODataServiceFault, ParseException {
+        String propertyType;
+        Object value;
+        switch (columnType) {
+            case INT32:
+                propertyType = EdmPrimitiveTypeKind.Int32.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue == null ? null : ConverterUtil.convertToInt(paramValue);
+                break;
+            case INT16:
+                propertyType = EdmPrimitiveTypeKind.Int16.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue == null ? null : ConverterUtil.convertToShort(paramValue);
+                break;
+            case DOUBLE:
+                propertyType = EdmPrimitiveTypeKind.Double.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue == null ? null : ConverterUtil.convertToDouble(paramValue);
+                break;
+            case STRING:
+                propertyType = EdmPrimitiveTypeKind.String.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case BOOLEAN:
+                propertyType = EdmPrimitiveTypeKind.Boolean.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue == null ? null : ConverterUtil.convertToBoolean(paramValue);
+                break;
+            case BINARY:
+                propertyType = EdmPrimitiveTypeKind.Binary.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue == null ? null : getBytesFromBase64String(paramValue);
+                break;
+            case BYTE:
+                propertyType = EdmPrimitiveTypeKind.Byte.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case SBYTE:
+                propertyType = EdmPrimitiveTypeKind.SByte.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case DATE:
+                propertyType = EdmPrimitiveTypeKind.Date.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = ConverterUtil.convertToDate(paramValue);
+                break;
+            case DURATION:
+                propertyType = EdmPrimitiveTypeKind.Duration.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case DECIMAL:
+                propertyType = EdmPrimitiveTypeKind.Decimal.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue == null ? null : ConverterUtil.convertToBigDecimal(paramValue);
+                break;
+            case SINGLE:
+                propertyType = EdmPrimitiveTypeKind.Single.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue == null ? null : ConverterUtil.convertToFloat(paramValue);
+                break;
+            case TIMEOFDAY:
+                propertyType = EdmPrimitiveTypeKind.TimeOfDay.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue == null ? null : ConverterUtil.convertToTime(paramValue).getAsCalendar();
+                break;
+            case INT64:
+                propertyType = EdmPrimitiveTypeKind.Int64.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue == null ? null : ConverterUtil.convertToLong(paramValue);
+                break;
+            case DATE_TIMEOFFSET:
+                propertyType = EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = ConverterUtil.convertToDateTime(paramValue);
+                break;
+            case GUID:
+                propertyType = EdmPrimitiveTypeKind.Guid.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = UUID.fromString(paramValue);
+                break;
+            case STREAM:
+                propertyType = EdmPrimitiveTypeKind.Stream.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOGRAPHY:
+                propertyType = EdmPrimitiveTypeKind.Geography.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOGRAPHY_POINT:
+                propertyType = EdmPrimitiveTypeKind.GeographyPoint.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOGRAPHY_LINE_STRING:
+                propertyType = EdmPrimitiveTypeKind.GeographyLineString.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOGRAPHY_POLYGON:
+                propertyType = EdmPrimitiveTypeKind.GeographyPolygon.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOGRAPHY_MULTIPOINT:
+                propertyType = EdmPrimitiveTypeKind.GeographyMultiPoint.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOGRAPHY_MULTILINE_STRING:
+                propertyType = EdmPrimitiveTypeKind.GeographyMultiLineString.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOGRAPHY_MULTIPOLYGON:
+                propertyType = EdmPrimitiveTypeKind.GeographyMultiPolygon.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOGRAPHY_COLLECTION:
+                propertyType = EdmPrimitiveTypeKind.GeographyCollection.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOMETRY:
+                propertyType = EdmPrimitiveTypeKind.Geometry.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOMETRY_POINT:
+                propertyType = EdmPrimitiveTypeKind.GeometryPoint.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOMETRY_LINE_STRING:
+                propertyType = EdmPrimitiveTypeKind.GeometryLineString.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOMETRY_POLYGON:
+                propertyType = EdmPrimitiveTypeKind.GeometryPolygon.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOMETRY_MULTIPOINT:
+                propertyType = EdmPrimitiveTypeKind.GeometryMultiPoint.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOMETRY_MULTILINE_STRING:
+                propertyType = EdmPrimitiveTypeKind.GeographyMultiLineString.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOMETRY_MULTIPOLYGON:
+                propertyType = EdmPrimitiveTypeKind.GeometryMultiPolygon.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            case GEOMETRY_COLLECTION:
+                propertyType = EdmPrimitiveTypeKind.GeometryCollection.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+            default:
+                propertyType = EdmPrimitiveTypeKind.String.getFullQualifiedName().getFullQualifiedNameAsString();
+                value = paramValue;
+                break;
+        }
+        return new Property(propertyType, name, ValueType.PRIMITIVE, value);
+    }
+
     @Override
+    public void init(org.apache.olingo.server.api.OData odata, ServiceMetadata serviceMetadata) {
+        this.serviceMetadata = serviceMetadata;
+    }
+
     public void init(OData odata, ServiceMetadata serviceMetadata) {
         this.serviceMetadata = serviceMetadata;
     }
 
     @Override
-    public void readMetadata(MetadataRequest request, MetadataResponse response)
-            throws ODataApplicationException, ODataLibraryException {
+    public void readMetadata(MetadataRequest request, MetadataResponse response) throws ODataApplicationException, ODataLibraryException {
         response.writeMetadata();
     }
 
-    @Override
-    public void readServiceDocument(ServiceDocumentRequest request, ServiceDocumentResponse response)
-            throws ODataApplicationException, ODataLibraryException {
-        response.writeServiceDocument(request.getODataRequest().getRawBaseUri());
+    private int getPageSize(final DataRequest request) {
+
+        Integer preferredSize = request.getOdata().createPreferences(request.getODataRequest().getHeaders(HttpHeader.PREFER)).getMaxPageSize();
+
+        return preferredSize == null ? DEFAULT_MAX_PAGE_SIZE : preferredSize;
+
     }
 
-    private static class EntityDetails {
-        EntityCollection entitySet = null;
-        Entity entity = null;
-        EdmEntityType entityType;
-        boolean eTagMatched = false;
+    @Override
+    public void readServiceDocument(ServiceDocumentRequest request, ServiceDocumentResponse response) throws ODataApplicationException, ODataLibraryException {
+        response.writeServiceDocument(request.getODataRequest().getRawBaseUri());
     }
 
     /**
@@ -191,22 +376,42 @@ public class ODataAdapter implements ServiceHandler {
      * @return EntityDetails
      * @throws ODataApplicationException
      */
-    private EntityDetails process(final DataRequest request) throws ODataApplicationException {
-        EntityCollection entitySet = null;
+    private EntityDetails process(DataRequest request) throws ODataApplicationException {
+
+        EntityIterator iterator = null;
         Entity entity = null;
         EdmEntityType entityType;
         Entity parentEntity;
         EdmEntitySet edmEntitySet;
         EntityDetails details = new EntityDetails();
+
         String baseURL = request.getODataRequest().getRawBaseUri();
         UriInfo uriInfo = request.getUriInfo();
+
+        // Get OData query options
+        ExpandOption expandOption = uriInfo.getExpandOption();
+        FilterOption filterOption = uriInfo.getFilterOption();
+        CountOption countOption = uriInfo.getCountOption();
+        OrderByOption orderByOption = uriInfo.getOrderByOption();
+        SkipOption skipOption = uriInfo.getSkipOption();
+        TopOption topOption = uriInfo.getTopOption();
+        SkipTokenOption skipTokenOption = uriInfo.getSkipTokenOption();
+        SelectOption selectOption = uriInfo.getSelectOption();
+
+        QueryOptions queryOptions = new QueryOptions(expandOption, filterOption, countOption, skipOption, topOption, orderByOption, skipTokenOption);
+
         try {
             if (request.isSingleton()) {
                 log.error(new ODataServiceFault("Singletons are not supported."));
-                throw new ODataApplicationException("Singletons are not supported.",
-                                                    HttpStatusCode.NOT_ACCEPTABLE.getStatusCode(), Locale.ENGLISH);
+                throw new ODataApplicationException("Singletons are not supported.", HttpStatusCode.NOT_ACCEPTABLE.getStatusCode(), Locale.ENGLISH);
             } else {
                 edmEntitySet = request.getEntitySet();
+
+                if (skipTokenOption != null) {
+                    int pageSize = this.getPageSize(request);
+                    queryOptions.initPagination(pageSize, baseURL, edmEntitySet.getName());
+                }
+
                 entityType = edmEntitySet.getEntityType();
                 List<UriParameter> keys = request.getKeyPredicates();
                 if (keys != null && !keys.isEmpty()) {
@@ -215,171 +420,52 @@ public class ODataAdapter implements ServiceHandler {
                         details.eTagMatched = true;
                     }
                 } else {
-                    entitySet = getEntityCollection(edmEntitySet.getName(), baseURL);
+                    iterator = getEntityIterator(edmEntitySet, baseURL, queryOptions);
                 }
             }
-            ExpandOption expandOption = uriInfo.getExpandOption();
-            if (expandOption != null) {
-                // retrieve the EdmNavigationProperty from the expand expression.
-                EdmNavigationProperty edmNavigationProperty = null;
-                List<ExpandItem> expandItems = expandOption.getExpandItems();
-                for (ExpandItem expandItem : expandItems) {
-                    if (expandItem.isStar()) {
-                        List<EdmNavigationPropertyBinding> bindings = edmEntitySet.getNavigationPropertyBindings();
-                        // check if navigation bindings exist.
-                        if (!bindings.isEmpty()) {
-                            EdmNavigationPropertyBinding binding = bindings.get(0);
-                            EdmElement property = edmEntitySet.getEntityType().getProperty(binding.getPath());
-                            if (property instanceof EdmNavigationProperty) {
-                                edmNavigationProperty = (EdmNavigationProperty) property;
-                            }
-                        }
-                    } else {
-                        UriResource uriResource = expandItem.getResourcePath().getUriResourceParts().get(0);
-                        if (uriResource instanceof UriResourceNavigation) {
-                            edmNavigationProperty = ((UriResourceNavigation) uriResource).getProperty();
-                        }
-                    }
-                    // handle $expand.
-                    if (edmNavigationProperty != null) {
-                        String navPropName = edmNavigationProperty.getName();
-                        List<Entity> entityList;
-                        if (entitySet != null) {
-                            entityList = entitySet.getEntities();
-                        } else {
-                            entityList = Collections.singletonList(entity);
-                        }
-                        for (Entity entityObject : entityList) {
-                            Link link = new Link();
-                            link.setTitle(navPropName);
-                            link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
-                            link.setRel(Constants.NS_ASSOCIATION_LINK_REL + navPropName);
-                            if (edmNavigationProperty.isCollection()) {
-                                EntityCollection expandEntityCollection = getNavigableEntitySet(this.serviceMetadata,
-                                                                                                entityObject,
-                                                                                                edmNavigationProperty,
-                                                                                                baseURL);
-                                link.setInlineEntitySet(expandEntityCollection);
-                                if (expandEntityCollection != null) {
-                                    link.setHref(expandEntityCollection.getId().toASCIIString());
-                                }
-                            } else {
-                                Entity expandEntity = getNavigableEntity(serviceMetadata, entityObject,
-                                                                         edmNavigationProperty, baseURL);
-                                link.setInlineEntity(expandEntity);
-                                if (expandEntity != null) {
-                                    link.setHref(expandEntity.getId().toASCIIString());
-                                }
-                            }
-                            // set the link containing the expanded data to the current entity.
-                            entityObject.getNavigationLinks().add(link);
-                        }
-                    }
-                }
-            }
+
             // handle navigation.
             if (!request.getNavigations().isEmpty() && entity != null) {
                 for (UriResourceNavigation nav : request.getNavigations()) {
                     if (nav.isCollection()) {
-                        entitySet = getNavigableEntitySet(this.serviceMetadata, entity, nav.getProperty(), baseURL);
+
+                        edmEntitySet = getNavigationTargetEntitySet(edmEntitySet, nav.getProperty());
+
+                        if (skipTokenOption != null) {
+                            int pageSize = this.getPageSize(request);
+                            queryOptions.initPagination(pageSize, baseURL, edmEntitySet.getName());
+                        }
+
+                        iterator = getNavigableEntityIterator(edmEntitySet, this.serviceMetadata, entity, nav.getProperty(), baseURL, queryOptions);
+
                     } else {
                         parentEntity = entity;
                         entity = getNavigableEntity(serviceMetadata, parentEntity, nav.getProperty(), baseURL);
                     }
+
                     entityType = nav.getProperty().getType();
                 }
             }
 
+            details.edmEntitySet = edmEntitySet;
+            details.expandOption = expandOption;
+            details.countOption = countOption;
+            details.selectOption = selectOption;
             details.entity = entity;
-            details.entitySet = entitySet;
             details.entityType = entityType;
-            // According to the odatav4 spec we have to perform these queries according to the following order
-            FilterOption filterOption = uriInfo.getFilterOption();
-            CountOption countOption = uriInfo.getCountOption();
-            OrderByOption orderByOption = uriInfo.getOrderByOption();
-            SkipOption skipOption = uriInfo.getSkipOption();
-            TopOption topOption = uriInfo.getTopOption();
-            SkipTokenOption skipTokenOption = uriInfo.getSkipTokenOption();
-            if (filterOption != null) {
-                QueryHandler.applyFilterSystemQuery(filterOption, details.entitySet, edmEntitySet);
-            }
-            if (countOption != null) {
-                QueryHandler.applyCountSystemQueryOption(countOption, details.entitySet);
-            }
-            if (orderByOption != null) {
-                QueryHandler.applyOrderByOption(orderByOption, details.entitySet, edmEntitySet);
-            }
-            if (skipOption != null) {
-                QueryHandler.applySkipSystemQueryHandler(skipOption, details.entitySet);
-            }
-            if (topOption != null) {
-                QueryHandler.applyTopSystemQueryOption(topOption, details.entitySet);
-            }
-            if (skipTokenOption != null) {
-                int pageSize = request.getOdata().createPreferences(request.getODataRequest()
-                                                                           .getHeaders(HttpHeader.PREFER))
-                                      .getMaxPageSize();
-                QueryHandler.applyServerSidePaging(skipTokenOption, details.entitySet, edmEntitySet, baseURL, pageSize);
-            }
+            details.iterator = iterator;
+            details.writeOnlyReference = request.isReferenceRequest();
+
             return details;
         } catch (ODataServiceFault dataServiceFault) {
             log.error("Error in processing the read request. : " + dataServiceFault.getMessage(), dataServiceFault);
-            throw new ODataApplicationException(dataServiceFault.getMessage(),
-                                                HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(), Locale.ENGLISH);
+            throw new ODataApplicationException(dataServiceFault.getMessage(), HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(), Locale.ENGLISH);
         }
-    }
-
-    private EdmEntitySet getEdmEntitySet(final UriInfoResource uriInfo) throws ODataApplicationException {
-        EdmEntitySet entitySet;
-        final List<UriResource> resourcePaths = uriInfo.getUriResourceParts();
-        // First must be an entity, an entity collection, a function import, or an action import.
-        blockTypeFilters(resourcePaths.get(0));
-        if (resourcePaths.get(0) instanceof UriResourceEntitySet) {
-            entitySet = ((UriResourceEntitySet) resourcePaths.get(0)).getEntitySet();
-        } else if (resourcePaths.get(0) instanceof UriResourceFunction) {
-            entitySet = ((UriResourceFunction) resourcePaths.get(0)).getFunctionImport().getReturnedEntitySet();
-        } else if (resourcePaths.get(0) instanceof UriResourceAction) {
-            entitySet = ((UriResourceAction) resourcePaths.get(0)).getActionImport().getReturnedEntitySet();
-        } else {
-            throw new ODataApplicationException("Invalid resource type.",
-                                                HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ROOT);
-        }
-        int navigationCount = 0;
-        while (entitySet != null && ++navigationCount < resourcePaths.size() &&
-               resourcePaths.get(navigationCount) instanceof UriResourceNavigation) {
-            final UriResourceNavigation uriResourceNavigation =
-                    (UriResourceNavigation) resourcePaths.get(navigationCount);
-            blockTypeFilters(uriResourceNavigation);
-            if (uriResourceNavigation.getProperty().containsTarget()) {
-                throw new ODataApplicationException("Containment navigation is not supported.",
-                                                    HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ROOT);
-            }
-            final EdmBindingTarget target = entitySet.getRelatedBindingTarget(uriResourceNavigation.getProperty()
-                                                                                                   .getName());
-            if (target != null) {
-                if (target instanceof EdmEntitySet) {
-                    entitySet = (EdmEntitySet) target;
-                } else {
-                    throw new ODataApplicationException("Singletons are not supported.",
-                                                        HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ROOT);
-                }
-            }
-        }
-        return entitySet;
     }
 
     private void blockTypeFilters(final UriResource uriResource) throws ODataApplicationException {
-        if (uriResource instanceof UriResourceEntitySet &&
-            (((UriResourceEntitySet) uriResource).getTypeFilterOnCollection() != null ||
-             ((UriResourceEntitySet) uriResource).getTypeFilterOnEntry() != null) ||
-            uriResource instanceof UriResourceFunction &&
-            (((UriResourceFunction) uriResource).getTypeFilterOnCollection() != null ||
-             ((UriResourceFunction) uriResource).getTypeFilterOnEntry() != null) ||
-            uriResource instanceof UriResourceNavigation &&
-            (((UriResourceNavigation) uriResource).getTypeFilterOnCollection() != null ||
-             ((UriResourceNavigation) uriResource).getTypeFilterOnEntry() != null)) {
-            throw new ODataApplicationException("Type filters are not supported.",
-                                                HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ROOT);
+        if (uriResource instanceof UriResourceEntitySet && (((UriResourceEntitySet) uriResource).getTypeFilterOnCollection() != null || ((UriResourceEntitySet) uriResource).getTypeFilterOnEntry() != null) || uriResource instanceof UriResourceFunction && (((UriResourceFunction) uriResource).getTypeFilterOnCollection() != null || ((UriResourceFunction) uriResource).getTypeFilterOnEntry() != null) || uriResource instanceof UriResourceNavigation && (((UriResourceNavigation) uriResource).getTypeFilterOnCollection() != null || ((UriResourceNavigation) uriResource).getTypeFilterOnEntry() != null)) {
+            throw new ODataApplicationException("Type filters are not supported.", HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ROOT);
         }
     }
 
@@ -392,15 +478,17 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     @Override
-    public <T extends ServiceResponse> void read(final DataRequest request, final T response)
-            throws ODataApplicationException, ODataLibraryException {
+    public <T extends ServiceResponse> void read(final DataRequest request, final T response) throws ODataApplicationException, ODataLibraryException {
 
         final EntityDetails details = process(request);
 
         response.accepts(new ServiceResponseVisior() {
             @Override
             public void visit(CountResponse response) throws ODataApplicationException, SerializerException {
-                response.writeCount(details.entitySet.getCount());
+                while (details.iterator.hasNext()) {
+                    details.iterator.next();
+                }
+                response.writeCount(details.iterator.getCount());
             }
 
             @Override
@@ -421,21 +509,46 @@ public class ODataAdapter implements ServiceHandler {
             public void visit(StreamResponse response) throws ODataApplicationException {
                 EdmProperty edmProperty = request.getUriResourceProperty().getProperty();
                 Property property = details.entity.getProperty(edmProperty.getName());
-                response.writeStreamResponse(new ByteArrayInputStream((byte[]) (property.getValue())),
-                                             ContentType.APPLICATION_OCTET_STREAM);
-
+                response.writeStreamResponse(new ByteArrayInputStream((byte[]) (property.getValue())), ContentType.APPLICATION_OCTET_STREAM);
             }
 
             @Override
             public void visit(EntitySetResponse response) throws ODataApplicationException, SerializerException {
                 if (request.getPreference(ODATA_MAX_PAGE_SIZE) != null) {
-                    response.writeHeader("Preference-Applied", ODATA_MAX_PAGE_SIZE + "=" +
-                                                               request.getPreference(ODATA_MAX_PAGE_SIZE));
+                    response.writeHeader("Preference-Applied", ODATA_MAX_PAGE_SIZE + "=" + request.getPreference(ODATA_MAX_PAGE_SIZE));
                 }
                 if (details.entity == null && !request.getNavigations().isEmpty()) {
                     response.writeReadEntitySet(details.entityType, new EntityCollection());
                 } else {
-                    response.writeReadEntitySet(details.entityType, details.entitySet);
+
+                    OData odata = OData.newInstance();
+                    ODataSerializer serializer = getSerializer(request, odata);
+                    ServiceMetadata edm = odata.createServiceMetadata(getEdmProvider(), new ArrayList<EdmxReference>());
+                    final String id = request.getODataRequest().getRawBaseUri() + "/" + details.edmEntitySet.getName();
+
+                    ContextURL contextUrl = null;
+
+                    if (details.selectOption != null) {
+                        String selectList = odata.createUriHelper().buildContextURLSelectList(details.entityType, null, details.selectOption);
+
+                        contextUrl = ContextURL.with().entitySet(details.edmEntitySet).selectList(selectList).build();
+                    } else {
+                        contextUrl = ContextURL.with().entitySet(details.edmEntitySet).build();
+                    }
+
+                    EntityCollectionSerializerOptions opts = buildSerializerOptions(details, contextUrl, id);
+
+                    SerializerStreamResult serializerResult = serializer.entityCollectionStreamed(edm, details.edmEntitySet.getEntityType(), details.iterator, opts);
+
+                    if (ContentType.parse(request.getHeader("Accept")) != null) {
+                        response.getODataResponse().setHeader(HttpHeader.CONTENT_TYPE, request.getHeader("Accept"));
+                    } else {
+                        response.getODataResponse().setHeader(HttpHeader.CONTENT_TYPE, ContentType.APPLICATION_XML.toString());
+                    }
+
+                    response.getODataResponse().setODataContent(serializerResult.getODataContent());
+                    response.getODataResponse().setStatusCode(HttpStatusCode.OK.getStatusCode());
+
                 }
             }
 
@@ -461,15 +574,53 @@ public class ODataAdapter implements ServiceHandler {
         });
     }
 
+    private EntityCollectionSerializerOptions buildSerializerOptions(EntityDetails details, ContextURL contextUrl, String id) {
+
+        // Handle errors while streaming
+        ODataContentWriteErrorCallback errorCallback = new ODataContentWriteErrorCallback() {
+            public void handleError(ODataContentWriteErrorContext context, WritableByteChannel channel) {
+                String message = "An error occurred with message: ";
+                if (context.getException() != null) {
+                    message += context.getException().getMessage();
+                }
+                try {
+                    channel.write(ByteBuffer.wrap(message.getBytes()));
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        };
+
+        EntityCollectionSerializerOptions options = EntityCollectionSerializerOptions.with().id(id).writeContentErrorCallback(errorCallback).contextURL(contextUrl).expand(details.expandOption).count(details.countOption).select(details.selectOption).writeOnlyReferences(details.writeOnlyReference).build();
+
+        return options;
+    }
+
+    private ODataSerializer getSerializer(DataRequest request, OData odata) throws SerializerException {
+
+        ODataSerializer serializer = null;
+        if (ContentType.parse(request.getHeader("Accept")) != null) {
+            if (ContentType.parse(request.getHeader("Accept")).equals(ContentType.APPLICATION_JSON)) {
+                serializer = odata.createSerializer(ContentType.APPLICATION_JSON);
+            } else if (ContentType.parse(request.getHeader("Accept")).equals(ContentType.APPLICATION_XML)) {
+                serializer = odata.createSerializer(ContentType.APPLICATION_XML);
+            } else {
+                throw new IllegalArgumentException("Does not support " + request.getHeader("Accept") + " content type");
+            }
+        } else {
+            serializer = odata.createSerializer(ContentType.APPLICATION_XML);
+        }
+
+        return serializer;
+    }
+
     @Override
-    public void createEntity(DataRequest request, Entity entity, EntityResponse response)
-            throws ODataApplicationException {
+    public void createEntity(DataRequest request, Entity entity, EntityResponse response) throws ODataApplicationException {
         EdmEntitySet edmEntitySet = request.getEntitySet();
         String baseURL = request.getODataRequest().getRawBaseUri();
         try {
             Entity created = createEntityInTable(edmEntitySet.getEntityType(), entity);
-            entity.setId(new URI(ODataUtils.buildLocation(baseURL, created, edmEntitySet.getName(),
-                                                          edmEntitySet.getEntityType())));
+            entity.setId(new URI(ODataUtils.buildLocation(baseURL, created, edmEntitySet.getName(), edmEntitySet.getEntityType())));
             response.writeCreatedEntity(edmEntitySet, created);
         } catch (ODataServiceFault | SerializerException | URISyntaxException | EdmPrimitiveTypeException e) {
             response.writeNotModified();
@@ -479,8 +630,7 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     @Override
-    public void updateEntity(DataRequest request, Entity changes, boolean merge, String eTag, EntityResponse response)
-            throws ODataApplicationException {
+    public void updateEntity(DataRequest request, Entity changes, boolean merge, String eTag, EntityResponse response) throws ODataApplicationException {
         List<UriParameter> keys = request.getKeyPredicates();
         EdmEntityType entityType = request.getEntitySet().getEntityType();
         String baseUrl = request.getODataRequest().getRawBaseUri();
@@ -515,9 +665,7 @@ public class ODataAdapter implements ServiceHandler {
                             response.writeNotModified();
                         }
                     } else {
-                        response.writeError(
-                                new ODataServerError().setStatusCode(HttpStatusCode.PRECONDITION_FAILED.getStatusCode())
-                                                      .setMessage("E-Tag checksum didn't match."));
+                        response.writeError(new ODataServerError().setStatusCode(HttpStatusCode.PRECONDITION_FAILED.getStatusCode()).setMessage("E-Tag checksum didn't match."));
                     }
                 }
             }
@@ -537,8 +685,7 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     @Override
-    public void upsertEntity(DataRequest request, Entity entity, boolean merge, String entityETag,
-                             EntityResponse response) throws ODataLibraryException, ODataApplicationException {
+    public void upsertEntity(DataRequest request, Entity entity, boolean merge, String entityETag, EntityResponse response) throws ODataLibraryException, ODataApplicationException {
         EdmEntitySet edmEntitySet = request.getEntitySet();
         String baseUrl = request.getODataRequest().getRawBaseUri();
         Entity currentEntity;
@@ -556,8 +703,7 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     @Override
-    public void deleteEntity(DataRequest request, String eTag, EntityResponse response)
-            throws ODataApplicationException {
+    public void deleteEntity(DataRequest request, String eTag, EntityResponse response) throws ODataApplicationException {
         List<UriParameter> keys = request.getKeyPredicates();
         EdmEntityType entityType = request.getEntitySet().getEntityType();
         String baseUrl = request.getODataRequest().getRawBaseUri();
@@ -583,9 +729,7 @@ public class ODataAdapter implements ServiceHandler {
                 } else {
                     entity = getETagMatchedEntity(eTag, getIfMatch(request), entity);
                     if (entity == null) {
-                        response.writeError(
-                                new ODataServerError().setStatusCode(HttpStatusCode.PRECONDITION_FAILED.getStatusCode())
-                                                      .setMessage("E-Tag checksum didn't match."));
+                        response.writeError(new ODataServerError().setStatusCode(HttpStatusCode.PRECONDITION_FAILED.getStatusCode()).setMessage("E-Tag checksum didn't match."));
                         return;
                     } else {
                         deleteEntity = wrapEntityToDataEntry(entityType, entity);
@@ -618,12 +762,10 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     @Override
-    public void updateProperty(DataRequest request, Property property, boolean rawValue, boolean merge,
-                               String entityETag, PropertyResponse response)
-            throws ODataLibraryException, ODataApplicationException {
+    public void updateProperty(DataRequest request, Property property, boolean rawValue, boolean merge, String entityETag, PropertyResponse response) throws ODataLibraryException, ODataApplicationException {
         if (rawValue && property.getValue() != null) {
             // this is more generic, stricter conversion rules must taken in a real service
-            byte[] value = (byte[])property.getValue();
+            byte[] value = (byte[]) property.getValue();
             property.setValue(ValueType.PRIMITIVE, new String(value));
         }
 
@@ -639,9 +781,7 @@ public class ODataAdapter implements ServiceHandler {
                 }
                 entry.addValue(key.getName(), value);
             }
-            entry.addValue(property.getName(),
-                           readPrimitiveValueInString(entityType.getStructuralProperty(property.getName()),
-                                                      property.getValue()));
+            entry.addValue(property.getName(), readPrimitiveValueInString(entityType.getStructuralProperty(property.getName()), property.getValue()));
 		/*checking for the E-Tag option, If E-Tag didn't specify in the request we don't need to check the E-Tag checksum,
 		we can do the update operation directly */
             try {
@@ -662,8 +802,7 @@ public class ODataAdapter implements ServiceHandler {
                             StringBuilder message = new StringBuilder();
                             message.append("Entity couldn't find , For ");
                             for (UriParameter parameter : keys) {
-                                message.append(parameter.getName()).append(" = ").append(parameter.getText())
-                                       .append(" ,");
+                                message.append(parameter.getName()).append(" = ").append(parameter.getText()).append(" ,");
                             }
                             message.append(".");
                             log.debug(message);
@@ -671,18 +810,14 @@ public class ODataAdapter implements ServiceHandler {
                     } else {
                         entity = getETagMatchedEntity(entityETag, getIfMatch(request), entity);
                         if (entity != null) {
-                            this.dataHandler.updateEntityInTableTransactional(entityType.getName(),
-                                                                              wrapEntityToDataEntry(entityType, entity),
-                                                                              entry);
+                            this.dataHandler.updateEntityInTableTransactional(entityType.getName(), wrapEntityToDataEntry(entityType, entity), entry);
                             if (property.getValue() == null) {
                                 response.writePropertyDeleted();
                             } else {
                                 response.writePropertyUpdated();
                             }
                         } else {
-                            response.writeError(new ODataServerError().setStatusCode(
-                                    HttpStatusCode.PRECONDITION_FAILED.getStatusCode())
-                                                                      .setMessage("E-Tag checksum didn't match."));
+                            response.writeError(new ODataServerError().setStatusCode(HttpStatusCode.PRECONDITION_FAILED.getStatusCode()).setMessage("E-Tag checksum didn't match."));
                         }
                     }
                 }
@@ -707,9 +842,7 @@ public class ODataAdapter implements ServiceHandler {
         }
     }
 
-
-    public void updateProperty(DataRequest request, final Property property, boolean merge, String entityETag,
-                               PropertyResponse response) throws ODataApplicationException, ContentNegotiatorException {
+    public void updateProperty(DataRequest request, final Property property, boolean merge, String entityETag, PropertyResponse response) throws ODataApplicationException, ContentNegotiatorException {
         if (!property.isComplex()) {
             EdmEntityType entityType = request.getEntitySet().getEntityType();
             String baseUrl = request.getODataRequest().getRawBaseUri();
@@ -722,9 +855,7 @@ public class ODataAdapter implements ServiceHandler {
                 }
                 entry.addValue(key.getName(), value);
             }
-            entry.addValue(property.getName(),
-                           readPrimitiveValueInString(entityType.getStructuralProperty(property.getName()),
-                                                      property.getValue()));
+            entry.addValue(property.getName(), readPrimitiveValueInString(entityType.getStructuralProperty(property.getName()), property.getValue()));
 		/*checking for the E-Tag option, If E-Tag didn't specify in the request we don't need to check the E-Tag checksum,
 		we can do the update operation directly */
             try {
@@ -745,8 +876,7 @@ public class ODataAdapter implements ServiceHandler {
                             StringBuilder message = new StringBuilder();
                             message.append("Entity couldn't find , For ");
                             for (UriParameter parameter : keys) {
-                                message.append(parameter.getName()).append(" = ").append(parameter.getText())
-                                       .append(" ,");
+                                message.append(parameter.getName()).append(" = ").append(parameter.getText()).append(" ,");
                             }
                             message.append(".");
                             log.debug(message);
@@ -754,18 +884,14 @@ public class ODataAdapter implements ServiceHandler {
                     } else {
                         entity = getETagMatchedEntity(entityETag, getIfMatch(request), entity);
                         if (entity != null) {
-                            this.dataHandler.updateEntityInTableTransactional(entityType.getName(),
-                                                                              wrapEntityToDataEntry(entityType, entity),
-                                                                              entry);
+                            this.dataHandler.updateEntityInTableTransactional(entityType.getName(), wrapEntityToDataEntry(entityType, entity), entry);
                             if (property.getValue() == null) {
                                 response.writePropertyDeleted();
                             } else {
                                 response.writePropertyUpdated();
                             }
                         } else {
-                            response.writeError(new ODataServerError().setStatusCode(
-                                    HttpStatusCode.PRECONDITION_FAILED.getStatusCode())
-                                                                      .setMessage("E-Tag checksum didn't match."));
+                            response.writeError(new ODataServerError().setStatusCode(HttpStatusCode.PRECONDITION_FAILED.getStatusCode()).setMessage("E-Tag checksum didn't match."));
                         }
                     }
                 }
@@ -791,42 +917,34 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     @Override
-    public <T extends ServiceResponse> void invoke(FunctionRequest request, HttpMethod method, T response)
-            throws ODataApplicationException {
+    public <T extends ServiceResponse> void invoke(FunctionRequest request, HttpMethod method, T response) throws ODataApplicationException {
         response.getODataResponse().setStatusCode(HttpStatusCode.NOT_IMPLEMENTED.getStatusCode());
     }
 
     @Override
-    public <T extends ServiceResponse> void invoke(ActionRequest request, String eTag, T response)
-            throws ODataApplicationException {
+    public <T extends ServiceResponse> void invoke(ActionRequest request, String eTag, T response) throws ODataApplicationException {
         response.getODataResponse().setStatusCode(HttpStatusCode.NOT_IMPLEMENTED.getStatusCode());
     }
 
     @Override
-    public void readMediaStream(MediaRequest request, StreamResponse response)
-            throws ODataApplicationException, ContentNegotiatorException {
+    public void readMediaStream(MediaRequest request, StreamResponse response) throws ODataApplicationException, ContentNegotiatorException {
         response.getODataResponse().setStatusCode(HttpStatusCode.NOT_IMPLEMENTED.getStatusCode());
     }
 
     @Override
-    public void upsertMediaStream(MediaRequest request, String entityETag, InputStream mediaContent,
-                                  NoContentResponse response) throws ODataApplicationException {
+    public void upsertMediaStream(MediaRequest request, String entityETag, InputStream mediaContent, NoContentResponse response) throws ODataApplicationException {
         response.writeNotImplemented();
     }
 
     @Override
-    public void upsertStreamProperty(DataRequest request, String entityETag, InputStream streamContent,
-                                     NoContentResponse response) throws ODataApplicationException {
+    public void upsertStreamProperty(DataRequest request, String entityETag, InputStream streamContent, NoContentResponse response) throws ODataApplicationException {
         EdmEntitySet edmEntitySet = request.getEntitySet();
         List<UriParameter> keys = request.getKeyPredicates();
         EdmProperty property = request.getUriResourceProperty().getProperty();
-        modifyStreamProperties(request.getODataRequest(), entityETag, streamContent, response, edmEntitySet, keys,
-                               property);
+        modifyStreamProperties(request.getODataRequest(), entityETag, streamContent, response, edmEntitySet, keys, property);
     }
 
-    private void modifyStreamProperties(ODataRequest request, String entityETag, InputStream streamContent,
-                                        NoContentResponse response, EdmEntitySet edmEntitySet, List<UriParameter> keys,
-                                        EdmProperty property) throws ODataApplicationException {
+    private void modifyStreamProperties(ODataRequest request, String entityETag, InputStream streamContent, NoContentResponse response, EdmEntitySet edmEntitySet, List<UriParameter> keys, EdmProperty property) throws ODataApplicationException {
         String baseUrl = request.getRawBaseUri();
         EdmEntityType entityType = edmEntitySet.getEntityType();
         String tableName = entityType.getName();
@@ -844,10 +962,7 @@ public class ODataAdapter implements ServiceHandler {
                     Entity entity = getEntity(edmEntitySet.getEntityType(), keys, baseUrl);
                     if (entity != null) {
                         if (entityETag.equals(entity.getETag())) {
-                            deleted = this.dataHandler.updateEntityInTableTransactional(tableName,
-                                                                                        wrapEntityToDataEntry(entityType,
-                                                                                                              entity),
-                                                                                        entry);
+                            deleted = this.dataHandler.updateEntityInTableTransactional(tableName, wrapEntityToDataEntry(entityType, entity), entry);
                         } else {
                             response.writePreConditionFailed();
                         }
@@ -868,10 +983,7 @@ public class ODataAdapter implements ServiceHandler {
                     Entity entity = getEntity(edmEntitySet.getEntityType(), keys, baseUrl);
                     if (entity != null) {
                         if (entityETag.equals(entity.getETag())) {
-                            updated = this.dataHandler.updateEntityInTableTransactional(tableName,
-                                                                                        wrapEntityToDataEntry(entityType,
-                                                                                                              entity),
-                                                                                        entry);
+                            updated = this.dataHandler.updateEntityInTableTransactional(tableName, wrapEntityToDataEntry(entityType, entity), entry);
                         } else {
                             response.writePreConditionFailed();
                         }
@@ -890,8 +1002,7 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     @Override
-    public void addReference(DataRequest request, String entityETag, URI referenceId, NoContentResponse response)
-            throws ODataApplicationException {
+    public void addReference(DataRequest request, String entityETag, URI referenceId, NoContentResponse response) throws ODataApplicationException {
 		/* there is nothing called adding reference in database level.
 			We just need to modify the existing values in imported tables columns */
         updateReference(request, entityETag, referenceId, response);
@@ -928,8 +1039,7 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     @Override
-    public void updateReference(DataRequest request, String entityETag, URI updateId, NoContentResponse response)
-            throws ODataApplicationException {
+    public void updateReference(DataRequest request, String entityETag, URI updateId, NoContentResponse response) throws ODataApplicationException {
         String rootTable = request.getEntitySet().getName();
         String baseUrl = request.getODataRequest().getRawBaseUri();
         List<UriParameter> rootKeys = request.getUriResourceEntitySet().getKeyPredicates();
@@ -964,8 +1074,7 @@ public class ODataAdapter implements ServiceHandler {
                     }
                 }
             }
-            this.dataHandler.updateReference(rootTable, wrapKeyParamToDataEntry(rootKeys), navigationTable,
-                                             navigationKeys);
+            this.dataHandler.updateReference(rootTable, wrapKeyParamToDataEntry(rootKeys), navigationTable, navigationKeys);
             response.writeNoContent();
         } catch (ODataServiceFault e) {
             response.writeNotModified();
@@ -983,8 +1092,7 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     @Override
-    public void deleteReference(DataRequest request, URI deleteId, String entityETag, NoContentResponse response)
-            throws ODataApplicationException, UriParserException {
+    public void deleteReference(DataRequest request, URI deleteId, String entityETag, NoContentResponse response) throws ODataApplicationException, UriParserException {
         String rootTable = request.getEntitySet().getName();
         List<UriParameter> rootKeys = request.getUriResourceEntitySet().getKeyPredicates();
         String baseUrl = request.getODataRequest().getRawBaseUri();
@@ -1025,8 +1133,7 @@ public class ODataAdapter implements ServiceHandler {
                 }
             }
             // perform delete reference
-            this.dataHandler.deleteReference(rootTable, wrapKeyParamToDataEntry(rootKeys), navigationTable,
-                                             navigationKeys);
+            this.dataHandler.deleteReference(rootTable, wrapKeyParamToDataEntry(rootKeys), navigationTable, navigationKeys);
             response.writeNoContent();
         } catch (ODataServiceFault e) {
             response.writeNotModified();
@@ -1109,8 +1216,7 @@ public class ODataAdapter implements ServiceHandler {
      * @throws ODataServiceFault
      * @see EntityCollection
      */
-    private EntityCollection createEntityCollectionFromDataEntryList(String tableName, List<ODataEntry> entries,
-                                                                     String baseURL) throws ODataServiceFault {
+    private EntityCollection createEntityCollectionFromDataEntryList(String tableName, List<ODataEntry> entries, String baseURL) throws ODataServiceFault {
         try {
             EntityCollection entitySet = new EntityCollection();
             int count = 0;
@@ -1118,12 +1224,11 @@ public class ODataAdapter implements ServiceHandler {
                 Entity entity = new Entity();
                 for (DataColumn column : this.dataHandler.getTableMetadata().get(tableName).values()) {
                     String columnName = column.getColumnName();
+                    entity.getProperty("");
                     entity.addProperty(createPrimitive(column.getColumnType(), columnName, entry.getValue(columnName)));
                 }
                 //Set ETag to the entity
-                EdmEntityType entityType = this.serviceMetadata.getEdm()
-                                                               .getEntityType(new FullQualifiedName(this.namespace,
-                                                                                                    tableName));
+                EdmEntityType entityType = this.serviceMetadata.getEdm().getEntityType(new FullQualifiedName(this.namespace, tableName));
                 entity.setId(new URI(ODataUtils.buildLocation(baseURL, entity, entityType.getName(), entityType)));
                 entity.setETag(entry.getValue("ETag"));
                 entity.setType(new FullQualifiedName(this.namespace, tableName).getFullQualifiedNameAsString());
@@ -1135,11 +1240,262 @@ public class ODataAdapter implements ServiceHandler {
         } catch (URISyntaxException e) {
             throw new ODataServiceFault(e, "Error occurred when creating id for the entity. :" + e.getMessage());
         } catch (ParseException e) {
-            throw new ODataServiceFault(e, "Error occurred when creating a property for the entity. :" +
-                                           e.getMessage());
+            throw new ODataServiceFault(e, "Error occurred when creating a property for the entity. :" + e.getMessage());
         } catch (EdmPrimitiveTypeException e) {
-            throw new ODataServiceFault(e, "Error occurred when creating a property for the entity. :" +
-                                           e.getMessage());
+            throw new ODataServiceFault(e, "Error occurred when creating a property for the entity. :" + e.getMessage());
+        }
+    }
+
+    /**
+     * Returns entity iterator for entity streaming support in olingo.  .
+     *
+     * @param edmEntitySet Container of the Entity Type
+     * @param baseURL      Base URL of the request
+     * @param queryOptions Odata query options
+     * @param properties   Navigation properties
+     * @param tableName    Name of the table
+     * @return Entity Iterator
+     * @see EntityIterator
+     */
+    public EntityIterator createEntityIterator(EdmEntitySet edmEntitySet, String baseURL, QueryOptions queryOptions, ODataEntry properties, String tableName) throws ODataServiceFault {
+
+        this.dataHandler.initStreaming();
+        List<Entity> entityList = new ArrayList<Entity>();
+
+        Iterator<Entity> it = entityList.iterator();
+
+        // Get number OData entries to be processed
+        int rowsCount = -1;
+        try {
+            if (properties != null) {
+                rowsCount = this.dataHandler.getEntityCountWithKeys(tableName, properties);
+            } else {
+                rowsCount = this.dataHandler.getEntityCount(tableName);
+            }
+        } catch (ODataServiceFault e) {
+            throw new ODataServiceFault(e, "Connection Error occurred. :" + e.getMessage());
+        }
+
+        return new StreamingEntityIterator(this, edmEntitySet, baseURL, it, entityList, queryOptions, rowsCount, properties, tableName) {
+
+            @Override
+            public boolean hasNext() {
+                if (!this.iterator.hasNext()) {
+                    try {
+
+                        if (this.entityCount >= this.rowCount) {
+                            return false;
+                        }
+
+                        QueryOptions queryOptions = this.getQueryOptions();
+
+                        if (queryOptions.getTopOption() != null && queryOptions.getTopCount() > queryOptions.getTopOption().getValue()) {
+                            return false;
+                        }
+
+                        if (queryOptions.getSkipTokenOption() != null && queryOptions.getSkipTokenCount() > (queryOptions.getItemsToSkip() + queryOptions.getPageSize())) {
+                            return false;
+                        }
+
+                        EdmEntitySet edmEntitySet = this.getEdmEntitySet();
+                        ODataAdapter oDataAdapter = this.getAdapter();
+                        String tableName = this.getTableName();
+
+                        List<ODataEntry> entries = null;
+                        if (queryOptions.getOrderByOption() != null) {
+                            entries = oDataAdapter.dataHandler.StreamTableWithOrder(tableName, queryOptions.getOrderByOption());
+                        } else if (this.getProperties() != null) {
+                            entries = oDataAdapter.dataHandler.streamTableWithKeys(tableName, this.getProperties());
+                        } else {
+                            entries = oDataAdapter.dataHandler.streamTable(tableName);
+                        }
+
+                        String baseURL = this.getBaseURL();
+                        for (int i = 0; i < entries.size(); i++) {
+
+                            Entity entity = createEntityForStreaming(oDataAdapter, tableName, entries.get(i), baseURL);
+                            this.entityCount++;
+
+                            if (queryOptions.getFilterOption() != null) {
+                                final VisitorOperand operand = queryOptions.getFilterOption().getExpression().accept(new ExpressionVisitorImpl(entity, edmEntitySet));
+                                final TypedOperand typedOperand = operand.asTypedOperand();
+
+                                if (typedOperand.is(ODataConstants.primitiveBoolean)) {
+                                    if (Boolean.FALSE.equals(typedOperand.getTypedValue(Boolean.class))) {
+                                        continue;
+                                    }
+                                } else {
+                                    throw new ODataApplicationException("Invalid filter expression. Filter expressions must return a value of " + "type Edm.Boolean", HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ROOT);
+                                }
+                            }
+                            if (queryOptions.getSkipOption() != null) {
+                                queryOptions.stepSkipCount();
+
+                                if (queryOptions.getSkipCount() <= queryOptions.getSkipOption().getValue()) {
+                                    continue;
+                                }
+                            }
+                            if (queryOptions.getTopOption() != null) {
+                                queryOptions.stepTopCount();
+
+                                if (queryOptions.getTopCount() > queryOptions.getTopOption().getValue()) {
+                                    this.iterator = this.getEntityList().iterator();
+                                    return this.iterator.hasNext();
+                                }
+                            }
+
+                            if (queryOptions.getSkipTokenOption() != null) {
+                                queryOptions.stepSkipTokenCount();
+
+                                if (queryOptions.getSkipTokenCount() <= queryOptions.getItemsToSkip()) {
+                                    continue;
+                                } else if (queryOptions.getSkipTokenCount() > (queryOptions.getItemsToSkip() + queryOptions.getPageSize())) {
+                                    this.iterator = this.getEntityList().iterator();
+                                    return this.iterator.hasNext();
+                                }
+                            }
+
+                            if (queryOptions.getExpandOption() != null) {
+                                entity = expandEntityForStreaming(oDataAdapter, entity, baseURL, edmEntitySet, queryOptions.getExpandOption());
+                            }
+
+                            this.getEntityList().add(entity);
+                        }
+                        if (this.entityCount < this.rowCount && this.getEntityList().isEmpty()) {
+                            if (queryOptions.getFilterOption() != null) {
+                                return hasNext();
+                            }
+                            if (queryOptions.getSkipOption() != null && (queryOptions.getSkipCount() <= queryOptions.getSkipOption().getValue())) {
+                                return hasNext();
+                            }
+                            if (queryOptions.getSkipTokenOption() != null && (queryOptions.getSkipTokenCount() <= queryOptions.getItemsToSkip())) {
+                                return hasNext();
+                            }
+                        }
+                        this.iterator = this.getEntityList().iterator();
+                        return this.iterator.hasNext();
+
+                    } catch (ODataServiceFault e) {
+                        throw new RuntimeException(e);
+                    } catch (ExpressionVisitException e) {
+                        throw new RuntimeException(e);
+                    } catch (ODataApplicationException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                return this.iterator.hasNext();
+            }
+
+            @Override
+            public Entity next() {
+                Entity entity = null;
+                entity = this.iterator.next();
+                this.setCount(this.getCount() + 1);
+                this.iterator.remove();
+                return entity;
+            }
+        };
+    }
+
+    /**
+     * This method handles OData expand option
+     * Expand and attach referenced entities
+     *
+     * @param oDataAdapter
+     * @param entity       Entity to be processed
+     * @param baseURL      Base URL of the request
+     * @param edmEntitySet Container of the Entity Type
+     * @param expandOption OData expand options
+     * @return Processed entity
+     */
+    private Entity expandEntityForStreaming(ODataAdapter oDataAdapter, Entity entity, String baseURL, EdmEntitySet edmEntitySet, ExpandOption expandOption) {
+
+        try {
+            EdmNavigationProperty edmNavigationProperty = null;
+            List<ExpandItem> expandItems = expandOption.getExpandItems();
+
+            for (ExpandItem expandItem : expandItems) {
+                if (expandItem.isStar()) {
+                    List<EdmNavigationPropertyBinding> bindings = edmEntitySet.getNavigationPropertyBindings();
+
+                    if (!bindings.isEmpty()) {
+                        EdmNavigationPropertyBinding binding = bindings.get(0);
+                        EdmElement property = edmEntitySet.getEntityType().getProperty(binding.getPath());
+                        if (property instanceof EdmNavigationProperty) {
+                            edmNavigationProperty = (EdmNavigationProperty) property;
+                        }
+                    }
+                } else {
+                    UriResource uriResource = expandItem.getResourcePath().getUriResourceParts().get(0);
+                    if (uriResource instanceof UriResourceNavigation) {
+                        edmNavigationProperty = ((UriResourceNavigation) uriResource).getProperty();
+                    }
+                }
+                // handle $expand.
+                if (edmNavigationProperty != null) {
+                    String navPropName = edmNavigationProperty.getName();
+
+                    Link link = new Link();
+                    link.setTitle(navPropName);
+                    link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
+                    link.setRel(Constants.NS_ASSOCIATION_LINK_REL + navPropName);
+                    if (edmNavigationProperty.isCollection()) {
+                        EntityCollection expandEntityCollection = getNavigableEntitySet(oDataAdapter.serviceMetadata, entity, edmNavigationProperty, baseURL);
+                        link.setInlineEntitySet(expandEntityCollection);
+                        if (expandEntityCollection != null) {
+                            link.setHref(expandEntityCollection.getId().toASCIIString());
+                        }
+                    } else {
+                        Entity expandEntity = getNavigableEntity(serviceMetadata, entity, edmNavigationProperty, baseURL);
+                        link.setInlineEntity(expandEntity);
+                        if (expandEntity != null) {
+                            link.setHref(expandEntity.getId().toASCIIString());
+                        }
+                    }
+                    entity.getNavigationLinks().add(link);
+                }
+            }
+
+        } catch (ODataServiceFault e) {
+            throw new ODataServiceFault(e, "Error occurred when expanding a property for the entity. :" + e.getMessage());
+        } catch (ODataApplicationException e) {
+            throw new ODataServiceFault(e, "Error occurred when expanding a property for the entity. :" + e.getMessage());
+        } finally {
+            return entity;
+        }
+    }
+
+    /**
+     * This method creates an entity using an OData entry and table metadata
+     *
+     * @param oDataAdapter
+     * @param tableName    Name of the table (Entity Type)
+     * @param oDataEntry   A single row of data
+     * @param baseURL      Base URL of the request
+     * @return Created entity
+     */
+    private Entity createEntityForStreaming(ODataAdapter oDataAdapter, String tableName, ODataEntry oDataEntry, String baseURL) {
+        Entity entity = null;
+        try {
+            entity = new Entity();
+            for (DataColumn column : oDataAdapter.dataHandler.getTableMetadata().get(tableName).values()) {
+                String columnName = column.getColumnName();
+                entity.addProperty(createPrimitive(column.getColumnType(), columnName, oDataEntry.getValue(columnName)));
+            }
+            //Set ETag to the entity
+            EdmEntityType entityType = oDataAdapter.serviceMetadata.getEdm().getEntityType(new FullQualifiedName(oDataAdapter.namespace, tableName));
+            entity.setId(new URI(ODataUtils.buildLocation(baseURL, entity, entityType.getName(), entityType)));
+            entity.setETag(oDataEntry.getValue("ETag"));
+            entity.setType(new FullQualifiedName(oDataAdapter.namespace, tableName).getFullQualifiedNameAsString());
+
+        } catch (URISyntaxException e) {
+            throw new ODataServiceFault(e, "Error occurred when creating id for the entity. :" + e.getMessage());
+        } catch (ParseException e) {
+            throw new ODataServiceFault(e, "Error occurred when creating a property for the entity. :" + e.getMessage());
+        } catch (EdmPrimitiveTypeException e) {
+            throw new ODataServiceFault(e, "Error occurred when creating a property for the entity. :" + e.getMessage());
+        } finally {
+            return entity;
         }
     }
 
@@ -1160,10 +1516,9 @@ public class ODataAdapter implements ServiceHandler {
                 initializeTransactionalConnection();
             }
             String rootTable = entityType.getName();
-            ODataEntry createdEntity = this.dataHandler.insertEntityToTable(rootTable,
-                                                                            wrapEntityToDataEntry(entityType, entity));
-            for(String paramName : createdEntity.getNames()) {
-                if(!paramName.equals(ODataConstants.E_TAG)) {
+            ODataEntry createdEntity = this.dataHandler.insertEntityToTable(rootTable, wrapEntityToDataEntry(entityType, entity));
+            for (String paramName : createdEntity.getNames()) {
+                if (!paramName.equals(ODataConstants.E_TAG)) {
                     DataColumn column = this.dataHandler.getTableMetadata().get(rootTable).get(paramName);
                     entity.addProperty(createPrimitive(column.getColumnType(), paramName, createdEntity.getValue(paramName)));
                 }
@@ -1173,8 +1528,7 @@ public class ODataAdapter implements ServiceHandler {
                 for (Link reference : entity.getNavigationBindings()) {
                     String navigationTable = reference.getTitle();
                     if (reference.getBindingLinks().isEmpty()) {
-                        ODataEntry navigationKeys = getKeyPredicatesFromReference(reference.getBindingLink(),
-                                                                                  navigationTable);
+                        ODataEntry navigationKeys = getKeyPredicatesFromReference(reference.getBindingLink(), navigationTable);
                         this.dataHandler.updateReference(rootTable, rootKeys, navigationTable, navigationKeys);
                     } else {
                         for (String urlId : reference.getBindingLinks()) {
@@ -1221,9 +1575,7 @@ public class ODataAdapter implements ServiceHandler {
      * @see DataEntry
      * @see Property
      */
-    private ODataEntry wrapPropertiesToDataEntry(EdmEntityType entityType, List<Property> properties,
-                                                 Map<String, EdmProperty> propertyTypes)
-            throws ODataApplicationException {
+    private ODataEntry wrapPropertiesToDataEntry(EdmEntityType entityType, List<Property> properties, Map<String, EdmProperty> propertyTypes) throws ODataApplicationException {
         ODataEntry entry = new ODataEntry();
         for (Property property : properties) {
             EdmProperty propertyType = propertyTypes.get(property.getName());
@@ -1232,8 +1584,7 @@ public class ODataAdapter implements ServiceHandler {
         return entry;
     }
 
-    private ODataEntry getKeyPredicatesFromEntity(EdmEntityType entityType, Entity entity)
-            throws ODataApplicationException {
+    private ODataEntry getKeyPredicatesFromEntity(EdmEntityType entityType, Entity entity) throws ODataApplicationException {
         ODataEntry keyPredicates = new ODataEntry();
         for (String key : entityType.getKeyPredicateNames()) {
             EdmProperty propertyType = (EdmProperty) entityType.getProperty(key);
@@ -1266,14 +1617,6 @@ public class ODataAdapter implements ServiceHandler {
         return this.edmProvider;
     }
 
-    private byte[] getBytesFromBase64String(String base64Str) throws ODataServiceFault {
-        try {
-            return Base64.decodeBase64(base64Str.getBytes(DBConstants.DEFAULT_CHAR_SET_TYPE));
-        } catch (Exception e) {
-            throw new ODataServiceFault(e.getMessage());
-        }
-    }
-
     private String getBase64StringFromBytes(byte[] data) throws ODataServiceFault {
         byte[] base64Data = Base64.encodeBase64(data);
         try {
@@ -1294,8 +1637,7 @@ public class ODataAdapter implements ServiceHandler {
      * @throws DataServiceFault
      * @see ODataDataHandler#updateEntityInTableTransactional(String, ODataEntry, ODataEntry)
      */
-    private boolean updateEntityWithETagMatched(EdmEntityType edmEntityType, Entity entity, Entity existingEntity,
-                                                boolean merge) throws ODataApplicationException, DataServiceFault {
+    private boolean updateEntityWithETagMatched(EdmEntityType edmEntityType, Entity entity, Entity existingEntity, boolean merge) throws ODataApplicationException, DataServiceFault {
 		/* loop over all properties and replace the values with the values of the given payload
 		   Note: ignoring ComplexType, as we don't have it in wso2dss oData model */
         List<Property> oldProperties = existingEntity.getProperties();
@@ -1326,9 +1668,7 @@ public class ODataAdapter implements ServiceHandler {
             propertyMap.put(property, (EdmProperty) edmEntityType.getProperty(property));
             newProperties.addValue(property, readPrimitiveValueInString(propertyType, updateProperty.getValue()));
         }
-        return this.dataHandler.updateEntityInTableTransactional(edmEntityType.getName(),
-                                                                 wrapPropertiesToDataEntry(edmEntityType, oldProperties,
-                                                                                           propertyMap), newProperties);
+        return this.dataHandler.updateEntityInTableTransactional(edmEntityType.getName(), wrapPropertiesToDataEntry(edmEntityType, oldProperties, propertyMap), newProperties);
     }
 
     /**
@@ -1351,12 +1691,14 @@ public class ODataAdapter implements ServiceHandler {
     /**
      * This method returns the entity collection from the ODataDataHandler
      *
-     * @param tableName Name of the table
-     * @return EntityCollection
+     * @param edmEntitySet Container of the Entity Type
+     * @param baseUrl      Base URL of the request
+     * @param queryOptions OData Query options
+     * @return EntityIterator
      * @throws ODataServiceFault
      */
-    private EntityCollection getEntityCollection(String tableName, String baseUrl) throws ODataServiceFault {
-        return createEntityCollectionFromDataEntryList(tableName, this.dataHandler.readTable(tableName), baseUrl);
+    private EntityIterator getEntityIterator(EdmEntitySet edmEntitySet, String baseUrl, QueryOptions queryOptions) throws ODataServiceFault {
+        return createEntityIterator(edmEntitySet, baseUrl, queryOptions, null, edmEntitySet.getName());
     }
 
     /**
@@ -1369,8 +1711,7 @@ public class ODataAdapter implements ServiceHandler {
      * @throws ODataApplicationException
      * @throws ODataServiceFault
      */
-    private List<Entity> getMatch(EdmEntityType entityType, UriParameter param, List<Entity> entityList)
-            throws ODataApplicationException, ODataServiceFault {
+    private List<Entity> getMatch(EdmEntityType entityType, UriParameter param, List<Entity> entityList) throws ODataApplicationException, ODataServiceFault {
         ArrayList<Entity> list = new ArrayList<>();
         for (Entity entity : entityList) {
             EdmProperty property = (EdmProperty) entityType.getProperty(param.getName());
@@ -1412,13 +1753,9 @@ public class ODataAdapter implements ServiceHandler {
             }
             EdmPrimitiveType edmPrimitiveType = (EdmPrimitiveType) edmProperty.getType();
             Class<?> javaClass = getJavaClassForPrimitiveType(edmProperty, edmPrimitiveType);
-            return edmPrimitiveType.valueOfString(value, edmProperty.isNullable(), edmProperty.getMaxLength(),
-                                                  edmProperty.getPrecision(), edmProperty.getScale(),
-                                                  edmProperty.isUnicode(), javaClass);
+            return edmPrimitiveType.valueOfString(value, edmProperty.isNullable(), edmProperty.getMaxLength(), edmProperty.getPrecision(), edmProperty.getScale(), edmProperty.isUnicode(), javaClass);
         } catch (EdmPrimitiveTypeException e) {
-            throw new ODataApplicationException("Invalid value: " + value + " for property: " + edmProperty.getName(),
-                                                HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                                                Locale.getDefault());
+            throw new ODataApplicationException("Invalid value: " + value + " for property: " + edmProperty.getName(), HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(), Locale.getDefault());
         }
     }
 
@@ -1436,13 +1773,9 @@ public class ODataAdapter implements ServiceHandler {
         }
         try {
             EdmPrimitiveType edmPrimitiveType = (EdmPrimitiveType) edmProperty.getType();
-            return edmPrimitiveType.valueToString(value, edmProperty.isNullable(), edmProperty.getMaxLength(),
-                                                  edmProperty.getPrecision(), edmProperty.getScale(),
-                                                  edmProperty.isUnicode());
+            return edmPrimitiveType.valueToString(value, edmProperty.isNullable(), edmProperty.getMaxLength(), edmProperty.getPrecision(), edmProperty.getScale(), edmProperty.isUnicode());
         } catch (EdmPrimitiveTypeException e) {
-            throw new ODataApplicationException("Invalid value: " + value + " for property: " + edmProperty.getName(),
-                                                HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                                                Locale.getDefault());
+            throw new ODataApplicationException("Invalid value: " + value + " for property: " + edmProperty.getName(), HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(), Locale.getDefault());
         }
     }
 
@@ -1474,10 +1807,8 @@ public class ODataAdapter implements ServiceHandler {
      * @throws ODataApplicationException
      * @throws ODataServiceFault
      */
-    private Entity getEntity(EdmEntityType entityType, List<UriParameter> keys, String baseUrl)
-            throws ODataApplicationException, ODataServiceFault {
-        EntityCollection entityCollection = createEntityCollectionFromDataEntryList(entityType.getName(), dataHandler
-                .readTableWithKeys(entityType.getName(), wrapKeyParamToDataEntry(keys)), baseUrl);
+    private Entity getEntity(EdmEntityType entityType, List<UriParameter> keys, String baseUrl) throws ODataApplicationException, ODataServiceFault {
+        EntityCollection entityCollection = createEntityCollectionFromDataEntryList(entityType.getName(), dataHandler.readTableWithKeys(entityType.getName(), wrapKeyParamToDataEntry(keys)), baseUrl);
         return getEntity(entityType, entityCollection, keys);
     }
 
@@ -1491,8 +1822,7 @@ public class ODataAdapter implements ServiceHandler {
      * @throws ODataApplicationException
      * @throws ODataServiceFault
      */
-    private Entity getEntity(EdmEntityType entityType, EntityCollection entityCollection, List<UriParameter> keys)
-            throws ODataApplicationException, ODataServiceFault {
+    private Entity getEntity(EdmEntityType entityType, EntityCollection entityCollection, List<UriParameter> keys) throws ODataApplicationException, ODataServiceFault {
         List<Entity> search = null;
         if (entityCollection.getEntities().isEmpty()) {
             if (log.isDebugEnabled()) {
@@ -1545,15 +1875,12 @@ public class ODataAdapter implements ServiceHandler {
      * @return EntityCollection
      * @throws ODataServiceFault
      */
-    private EntityCollection getNavigableEntitySet(ServiceMetadata metadata, Entity parentEntity,
-                                                   EdmNavigationProperty navigation, String url)
-            throws ODataServiceFault, ODataApplicationException {
+    private EntityCollection getNavigableEntitySet(ServiceMetadata metadata, Entity parentEntity, EdmNavigationProperty navigation, String url) throws ODataServiceFault, ODataApplicationException {
         EdmEntityType type = metadata.getEdm().getEntityType(new FullQualifiedName(parentEntity.getType()));
         String linkName = navigation.getName();
         List<Property> properties = new ArrayList<>();
         Map<String, EdmProperty> propertyMap = new HashMap<>();
-        for (NavigationKeys keys : this.dataHandler.getNavigationProperties().get(type.getName())
-                                                   .getNavigationKeys(linkName)) {
+        for (NavigationKeys keys : this.dataHandler.getNavigationProperties().get(type.getName()).getNavigationKeys(linkName)) {
             Property property = parentEntity.getProperty(keys.getPrimaryKey());
             if (property != null && !property.isNull()) {
                 propertyMap.put(keys.getForeignKey(), (EdmProperty) type.getProperty(property.getName()));
@@ -1561,9 +1888,29 @@ public class ODataAdapter implements ServiceHandler {
                 properties.add(property);
             }
         }
-        if(!properties.isEmpty()) {
-            return createEntityCollectionFromDataEntryList(linkName, dataHandler
-                    .readTableWithKeys(linkName, wrapPropertiesToDataEntry(type, properties, propertyMap)), url);
+        if (!properties.isEmpty()) {
+            return createEntityCollectionFromDataEntryList(linkName, dataHandler.readTableWithKeys(linkName, wrapPropertiesToDataEntry(type, properties, propertyMap)), url);
+        }
+        return null;
+    }
+
+    // Set Navingation with streaming
+    private EntityIterator getNavigableEntityIterator(EdmEntitySet edmEntitySet, ServiceMetadata metadata, Entity parentEntity, EdmNavigationProperty navigation, String url, QueryOptions queryOptions) throws ODataApplicationException, ODataServiceFault {
+
+        EdmEntityType type = metadata.getEdm().getEntityType(new FullQualifiedName(parentEntity.getType()));
+        String linkName = navigation.getName();
+        List<Property> properties = new ArrayList<>();
+        Map<String, EdmProperty> propertyMap = new HashMap<>();
+        for (NavigationKeys keys : this.dataHandler.getNavigationProperties().get(type.getName()).getNavigationKeys(linkName)) {
+            Property property = parentEntity.getProperty(keys.getPrimaryKey());
+            if (property != null && !property.isNull()) {
+                propertyMap.put(keys.getForeignKey(), (EdmProperty) type.getProperty(property.getName()));
+                property.setName(keys.getForeignKey());
+                properties.add(property);
+            }
+        }
+        if (!properties.isEmpty()) {
+            return createEntityIterator(edmEntitySet, url, queryOptions, wrapPropertiesToDataEntry(type, properties, propertyMap), linkName);
         }
         return null;
     }
@@ -1582,14 +1929,12 @@ public class ODataAdapter implements ServiceHandler {
      * @throws ODataServiceFault
      * @see ODataDataHandler#getNavigationProperties()
      */
-    private Entity getNavigableEntity(ServiceMetadata metadata, Entity parentEntity, EdmNavigationProperty navigation,
-                                      String baseUrl) throws ODataApplicationException, ODataServiceFault {
+    private Entity getNavigableEntity(ServiceMetadata metadata, Entity parentEntity, EdmNavigationProperty navigation, String baseUrl) throws ODataApplicationException, ODataServiceFault {
         EdmEntityType type = metadata.getEdm().getEntityType(new FullQualifiedName(parentEntity.getType()));
         String linkName = navigation.getName();
         List<Property> properties = new ArrayList<>();
         Map<String, EdmProperty> propertyMap = new HashMap<>();
-        for (NavigationKeys keys : this.dataHandler.getNavigationProperties().get(linkName)
-                                                   .getNavigationKeys(type.getName())) {
+        for (NavigationKeys keys : this.dataHandler.getNavigationProperties().get(linkName).getNavigationKeys(type.getName())) {
             Property property = parentEntity.getProperty(keys.getForeignKey());
             if (property != null && !property.isNull()) {
                 propertyMap.put(keys.getPrimaryKey(), (EdmProperty) type.getProperty(property.getName()));
@@ -1599,8 +1944,7 @@ public class ODataAdapter implements ServiceHandler {
         }
         EntityCollection results = null;
         if (!properties.isEmpty()) {
-            results = createEntityCollectionFromDataEntryList(linkName, dataHandler
-                    .readTableWithKeys(linkName, wrapPropertiesToDataEntry(type, properties, propertyMap)), baseUrl);
+            results = createEntityCollectionFromDataEntryList(linkName, dataHandler.readTableWithKeys(linkName, wrapPropertiesToDataEntry(type, properties, propertyMap)), baseUrl);
         }
         if (results != null && !results.getEntities().isEmpty()) {
             return results.getEntities().get(0);
@@ -1837,176 +2181,6 @@ public class ODataAdapter implements ServiceHandler {
     }
 
     /**
-     * This method creates primitive type property.
-     *
-     * @param columnType Data type of the column - java.sql.Types
-     * @param name       Name of the column
-     * @param paramValue String value
-     * @return Property
-     * @throws ODataServiceFault
-     * @see Types
-     * @see Property
-     */
-    private Property createPrimitive(final DataColumn.ODataDataType columnType, final String name,
-                                     final String paramValue) throws ODataServiceFault, ParseException {
-        String propertyType;
-        Object value;
-        switch (columnType) {
-            case INT32:
-                propertyType = EdmPrimitiveTypeKind.Int32.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToInt(paramValue);
-                break;
-            case INT16:
-                propertyType = EdmPrimitiveTypeKind.Int16.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToByte(paramValue);
-                break;
-            case DOUBLE:
-                propertyType = EdmPrimitiveTypeKind.Double.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToDouble(paramValue);
-                break;
-            case STRING:
-                propertyType = EdmPrimitiveTypeKind.String.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case BOOLEAN:
-                propertyType = EdmPrimitiveTypeKind.Boolean.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToBoolean(paramValue);
-                break;
-            case BINARY:
-                propertyType = EdmPrimitiveTypeKind.Binary.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : getBytesFromBase64String(paramValue);
-                break;
-            case BYTE:
-                propertyType = EdmPrimitiveTypeKind.Byte.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case SBYTE:
-                propertyType = EdmPrimitiveTypeKind.SByte.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case DATE:
-                propertyType = EdmPrimitiveTypeKind.Date.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = ConverterUtil.convertToDate(paramValue);
-                break;
-            case DURATION:
-                propertyType = EdmPrimitiveTypeKind.Duration.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case DECIMAL:
-                propertyType = EdmPrimitiveTypeKind.Decimal.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToBigDecimal(paramValue);
-                break;
-            case SINGLE:
-                propertyType = EdmPrimitiveTypeKind.Single.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToFloat(paramValue);
-                break;
-            case TIMEOFDAY:
-                propertyType = EdmPrimitiveTypeKind.TimeOfDay.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToTime(paramValue).getAsCalendar();
-                break;
-            case INT64:
-                propertyType = EdmPrimitiveTypeKind.Int64.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue == null ? null : ConverterUtil.convertToLong(paramValue);
-                break;
-            case DATE_TIMEOFFSET:
-                propertyType = EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName()
-                                                                  .getFullQualifiedNameAsString();
-                value = ConverterUtil.convertToDateTime(paramValue);
-                break;
-            case GUID:
-                propertyType = EdmPrimitiveTypeKind.Guid.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = UUID.fromString(paramValue);
-                break;
-            case STREAM:
-                propertyType = EdmPrimitiveTypeKind.Stream.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY:
-                propertyType = EdmPrimitiveTypeKind.Geography.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_POINT:
-                propertyType = EdmPrimitiveTypeKind.GeographyPoint.getFullQualifiedName()
-                                                                  .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_LINE_STRING:
-                propertyType = EdmPrimitiveTypeKind.GeographyLineString.getFullQualifiedName()
-                                                                       .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_POLYGON:
-                propertyType = EdmPrimitiveTypeKind.GeographyPolygon.getFullQualifiedName()
-                                                                    .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_MULTIPOINT:
-                propertyType = EdmPrimitiveTypeKind.GeographyMultiPoint.getFullQualifiedName()
-                                                                       .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_MULTILINE_STRING:
-                propertyType = EdmPrimitiveTypeKind.GeographyMultiLineString.getFullQualifiedName()
-                                                                            .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_MULTIPOLYGON:
-                propertyType = EdmPrimitiveTypeKind.GeographyMultiPolygon.getFullQualifiedName()
-                                                                         .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOGRAPHY_COLLECTION:
-                propertyType = EdmPrimitiveTypeKind.GeographyCollection.getFullQualifiedName()
-                                                                       .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY:
-                propertyType = EdmPrimitiveTypeKind.Geometry.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_POINT:
-                propertyType = EdmPrimitiveTypeKind.GeometryPoint.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_LINE_STRING:
-                propertyType = EdmPrimitiveTypeKind.GeometryLineString.getFullQualifiedName()
-                                                                      .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_POLYGON:
-                propertyType = EdmPrimitiveTypeKind.GeometryPolygon.getFullQualifiedName()
-                                                                   .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_MULTIPOINT:
-                propertyType = EdmPrimitiveTypeKind.GeometryMultiPoint.getFullQualifiedName()
-                                                                      .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_MULTILINE_STRING:
-                propertyType = EdmPrimitiveTypeKind.GeographyMultiLineString.getFullQualifiedName()
-                                                                            .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_MULTIPOLYGON:
-                propertyType = EdmPrimitiveTypeKind.GeometryMultiPolygon.getFullQualifiedName()
-                                                                        .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            case GEOMETRY_COLLECTION:
-                propertyType = EdmPrimitiveTypeKind.GeometryCollection.getFullQualifiedName()
-                                                                      .getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-            default:
-                propertyType = EdmPrimitiveTypeKind.String.getFullQualifiedName().getFullQualifiedNameAsString();
-                value = paramValue;
-                break;
-        }
-        return new Property(propertyType, name, ValueType.PRIMITIVE, value);
-    }
-
-    /**
      * This method updates entity in tables where the request doesn't specify the odata e-tag.
      *
      * @param edmEntityType Entity type
@@ -2016,8 +2190,7 @@ public class ODataAdapter implements ServiceHandler {
      * @throws DataServiceFault
      * @throws ODataApplicationException
      */
-    private void updateEntity(EdmEntityType edmEntityType, Entity entity, List<UriParameter> keys, boolean merge)
-            throws DataServiceFault, ODataApplicationException {
+    private void updateEntity(EdmEntityType edmEntityType, Entity entity, List<UriParameter> keys, boolean merge) throws DataServiceFault, ODataApplicationException {
         ODataEntry entry = new ODataEntry();
         for (UriParameter key : keys) {
             String value = key.getText();
@@ -2059,9 +2232,7 @@ public class ODataAdapter implements ServiceHandler {
      * @see EDMProvider
      */
     private CsdlEdmProvider initializeEdmProvider(String configID) throws ODataServiceFault {
-        return new EDMProvider(this.dataHandler.getTableList(), configID, this.namespace, getPropertiesMap(),
-                               getKeysCsdlMap(), this.dataHandler.getTableList(),
-                               this.dataHandler.getNavigationProperties());
+        return new EDMProvider(this.dataHandler.getTableList(), configID, this.namespace, getPropertiesMap(), getKeysCsdlMap(), this.dataHandler.getTableList(), this.dataHandler.getNavigationProperties());
     }
 
     private void initializeTransactionalConnection() throws ODataServiceFault {
@@ -2074,5 +2245,21 @@ public class ODataAdapter implements ServiceHandler {
         if (!batchRequest.get()) {
             this.dataHandler.commitTransaction();
         }
+    }
+
+    private static class EntityDetails {
+        Entity entity = null;
+        EdmEntityType entityType;
+        EdmEntitySet edmEntitySet;
+        EntityIterator iterator = null;
+        boolean eTagMatched = false;
+
+        ExpandOption expandOption;
+
+        CountOption countOption;
+
+        SelectOption selectOption;
+
+        boolean writeOnlyReference;
     }
 }

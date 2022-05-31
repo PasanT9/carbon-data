@@ -22,6 +22,8 @@ import org.apache.axis2.databinding.utils.ConverterUtil;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.olingo.server.api.uri.queryoption.OrderByItem;
+import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
 import org.wso2.carbon.dataservices.common.DBConstants;
 import org.wso2.carbon.dataservices.core.DBUtils;
 import org.wso2.carbon.dataservices.core.DataServiceFault;
@@ -59,40 +61,48 @@ import java.util.Map;
  * @see ODataDataHandler
  */
 public class RDBMSDataHandler implements ODataDataHandler {
-    private static final Log log = LogFactory.getLog(RDBMSDataHandler.class);
-    /**
-     * Table metadata.
-     */
-    private Map<String, Map<String, Integer>> rdbmsDataTypes;
-
-    private Map<String, Map<String, DataColumn>> tableMetaData;
-
-    /**
-     * Primary Keys of the Tables (Map<Table Name, List>).
-     */
-    private Map<String, List<String>> primaryKeys;
-
-    /**
-     * Config ID.
-     */
-    private final String configID;
-
-    /**
-     * RDBMS datasource.
-     */
-    private final DataSource dataSource;
-
-    /**
-     * List of Tables in the Database.
-     */
-    private List<String> tableList;
-
     public static final String TABLE_NAME = "TABLE_NAME";
     public static final String TABLE = "TABLE";
     public static final String VIEW = "VIEW";
     public static final String ORACLE_SERVER = "oracle";
     public static final String MSSQL_SERVER = "microsoft sql server";
-
+    private static final Log log = LogFactory.getLog(RDBMSDataHandler.class);
+    /**
+     * Config ID.
+     */
+    private final String configID;
+    /**
+     * Default buffer size
+     */
+    private final int DEFAULT_BUFFER_SIZE = 1000;
+    /**
+     * RDBMS datasource.
+     */
+    private final DataSource dataSource;
+    /**
+     * Table metadata.
+     */
+    private Map<String, Map<String, Integer>> rdbmsDataTypes;
+    private Map<String, Map<String, DataColumn>> tableMetaData;
+    /**
+     * Primary Keys of the Tables (Map<Table Name, List>).
+     */
+    private Map<String, List<String>> primaryKeys;
+    /**
+     * Preferred buffer size
+     */
+    private int bufferSize;
+    private ResultSet streamResultSet;
+    private Connection streamConnection;
+    private PreparedStatement preparedStatement;
+    /**
+     * Number entities to skip during current read iteration
+     */
+    private int skipEntityCount;
+    /**
+     * List of Tables in the Database.
+     */
+    private List<String> tableList;
     private ThreadLocal<Connection> transactionalConnection = new ThreadLocal<Connection>() {
         protected synchronized Connection initialValue() {
             return null;
@@ -112,7 +122,12 @@ public class RDBMSDataHandler implements ODataDataHandler {
         this.tableList = generateTableList();
         this.configID = configId;
         this.rdbmsDataTypes = new HashMap<>(this.tableList.size());
+        this.setBufferSize();
         initializeMetaData();
+    }
+
+    public void setBufferSize() {
+        this.bufferSize = Integer.parseInt(System.getProperty("odataBufferSize", String.valueOf(DEFAULT_BUFFER_SIZE)));
     }
 
     @Override
@@ -151,7 +166,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
         } catch (SQLException e) {
             throw new ODataServiceFault(e, "Connection Error occurred while committing. :" + e.getMessage());
         } finally {
-        /* close the connection */
+            /* close the connection */
             try {
                 connection.close();
                 transactionalConnection.set(null);
@@ -175,7 +190,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
         } catch (SQLException e) {
             throw new ODataServiceFault(e, "Connection Error occurred while rollback. :" + e.getMessage());
         } finally {
-		/* close the connection */
+            /* close the connection */
             try {
                 connection.close();
                 transactionalConnection.set(null);
@@ -186,8 +201,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
     }
 
     @Override
-    public void updateReference(String rootTable, ODataEntry rootTableKeys, String navigationTable,
-                                ODataEntry navigationTableKeys) throws ODataServiceFault {
+    public void updateReference(String rootTable, ODataEntry rootTableKeys, String navigationTable, ODataEntry navigationTableKeys) throws ODataServiceFault {
 		/* To add a reference first we need to find the foreign key values of the tables,
 		and therefore we need to identify which table has been exported */
         // Identifying the exported table and change the imported tables' column value
@@ -219,8 +233,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
     }
 
     @Override
-    public void deleteReference(String rootTable, ODataEntry rootTableKeys, String navigationTable,
-                                ODataEntry navigationTableKeys) throws ODataServiceFault {
+    public void deleteReference(String rootTable, ODataEntry rootTableKeys, String navigationTable, ODataEntry navigationTableKeys) throws ODataServiceFault {
 		/* To add a reference first we need to find the foreign key values of the tables,
 		and therefore we need to identify which table has been exported */
         // Identifying the exported table and change the imported tables' column value
@@ -251,8 +264,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
         modifyReferences(keys, importedTable, exportedTable, nullReferenceValues, importedTableKeys);
     }
 
-    private void modifyReferences(List<NavigationKeys> keys, String importedTable, String exportedTable,
-                                  ODataEntry modifyValues, ODataEntry primaryKeys) throws ODataServiceFault {
+    private void modifyReferences(List<NavigationKeys> keys, String importedTable, String exportedTable, ODataEntry modifyValues, ODataEntry primaryKeys) throws ODataServiceFault {
         Connection connection = null;
         PreparedStatement statement = null;
         try {
@@ -262,21 +274,18 @@ public class RDBMSDataHandler implements ODataDataHandler {
             int index = 1;
             for (String column : modifyValues.getNames()) {
                 String value = modifyValues.getValue(column);
-                bindValuesToPreparedStatement(this.rdbmsDataTypes.get(exportedTable).get(column), value, index,
-                                              statement);
+                bindValuesToPreparedStatement(this.rdbmsDataTypes.get(exportedTable).get(column), value, index, statement);
                 index++;
             }
             for (String column : primaryKeys.getNames()) {
                 String value = primaryKeys.getValue(column);
-                bindValuesToPreparedStatement(this.rdbmsDataTypes.get(importedTable).get(column), value, index,
-                                              statement);
+                bindValuesToPreparedStatement(this.rdbmsDataTypes.get(importedTable).get(column), value, index, statement);
                 index++;
             }
             statement.execute();
             commitExecution(connection);
         } catch (SQLException | ParseException e) {
-            log.warn("modify value count - " + modifyValues.getNames().size() + ", primary keys size - " +
-                     primaryKeys.getNames().size() + ", Error - " + e.getMessage(), e); //todo remove this later
+            log.warn("modify value count - " + modifyValues.getNames().size() + ", primary keys size - " + primaryKeys.getNames().size() + ", Error - " + e.getMessage(), e); //todo remove this later
             throw new ODataServiceFault(e, "Error occurred while updating foreign key values. :" + e.getMessage());
         } finally {
             releaseResources(null, statement);
@@ -284,8 +293,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
         }
     }
 
-    private ODataEntry getForeignKeysValues(String tableName, ODataEntry keys, List<NavigationKeys> columns)
-            throws ODataServiceFault {
+    private ODataEntry getForeignKeysValues(String tableName, ODataEntry keys, List<NavigationKeys> columns) throws ODataServiceFault {
         ResultSet resultSet = null;
         PreparedStatement statement = null;
         Connection connection = null;
@@ -305,8 +313,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
             for (NavigationKeys column : columns) {
                 String columnName = column.getPrimaryKey();
                 while (resultSet.next()) {
-                    value = getValueFromResultSet(this.rdbmsDataTypes.get(tableName).get(columnName), columnName,
-                                                  resultSet);
+                    value = getValueFromResultSet(this.rdbmsDataTypes.get(tableName).get(columnName), columnName, resultSet);
                     values.addValue(columnName, value);
                 }
             }
@@ -319,8 +326,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
         }
     }
 
-    private String createSelectReferenceKeyFromExportedTable(String tableName, ODataEntry keys,
-                                                             List<NavigationKeys> columns) {
+    private String createSelectReferenceKeyFromExportedTable(String tableName, ODataEntry keys, List<NavigationKeys> columns) {
         StringBuilder sql = new StringBuilder();
         boolean propertyMatch = false;
         sql.append("SELECT ");
@@ -382,12 +388,184 @@ public class RDBMSDataHandler implements ODataDataHandler {
             resultSet = statement.executeQuery();
             return createDataEntryCollectionFromRS(tableName, resultSet);
         } catch (SQLException e) {
-            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
-                                           e.getMessage());
+            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" + e.getMessage());
         } finally {
             releaseResources(resultSet, statement);
             releaseConnection(connection);
         }
+    }
+
+    public void initStreaming() {
+        this.skipEntityCount = 0;
+        this.streamResultSet = null;
+        this.streamConnection = null;
+        this.preparedStatement = null;
+    }
+
+    public int getEntityCountWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
+        ResultSet resultSet = null;
+        Connection connection = null;
+        PreparedStatement statement = null;
+        try {
+            connection = initializeConnection();
+            String query = createCountSqlWithKeys(tableName, keys);
+            statement = connection.prepareStatement(query);
+            int index = 1;
+            for (String column : keys.getNames()) {
+                if (this.rdbmsDataTypes.get(tableName).keySet().contains(column)) {
+                    String value = keys.getValue(column);
+                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index, statement);
+                    index++;
+                }
+            }
+            resultSet = statement.executeQuery();
+            resultSet.next();
+            return resultSet.getInt(1);
+        } catch (SQLException | ParseException e) {
+            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" + e.getMessage());
+        } finally {
+            releaseResources(resultSet, statement);
+            releaseConnection(connection);
+        }
+    }
+
+    public int getEntityCount(String tableName) throws ODataServiceFault {
+        ResultSet resultSet = null;
+        Connection connection = null;
+        PreparedStatement statement = null;
+        try {
+            connection = initializeConnection();
+            String query = "select count(*) from " + tableName;
+            statement = connection.prepareStatement(query);
+            resultSet = statement.executeQuery();
+            resultSet.next();
+            return resultSet.getInt(1);
+        } catch (SQLException e) {
+            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" + e.getMessage());
+        } finally {
+            releaseResources(resultSet, statement);
+            releaseConnection(connection);
+        }
+    }
+
+    public List<ODataEntry> streamTable(String tableName) throws ODataServiceFault {
+        List<ODataEntry> entitySet = new ArrayList<>();
+        try {
+            if (this.streamConnection == null) {
+                String query = "select * from " + tableName;
+                initializeStreamConnection(query);
+                this.streamResultSet = this.preparedStatement.executeQuery();
+            }
+            int count = 0;
+            while (this.streamResultSet.next()) {
+                ODataEntry entry = createDataEntryFromRS(tableName);
+                entitySet.add(entry);
+                count++;
+                if (count >= this.bufferSize) {
+                    break;
+                }
+            }
+            return entitySet;
+        } catch (SQLException e) {
+            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" + e.getMessage());
+        } finally {
+            try {
+                if (this.streamResultSet.isLast() || this.streamResultSet.isAfterLast()) {
+                    this.closeStreamConnection();
+                }
+            } catch (SQLException e) {
+                this.closeStreamConnection();
+                throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" + e.getMessage());
+            }
+        }
+    }
+
+    private void closeStreamConnection() throws ODataServiceFault {
+
+        try {
+            this.streamResultSet.close();
+            this.preparedStatement.close();
+            this.streamConnection.close();
+
+        } catch (SQLException e) {
+            throw new ODataServiceFault("Error occurred while trying to close the database connection");
+        } finally {
+            this.streamResultSet = null;
+            this.preparedStatement = null;
+            this.streamConnection = null;
+        }
+    }
+
+    public List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault {
+        List<ODataEntry> entitySet = new ArrayList<>();
+        try {
+            if (this.streamConnection == null) {
+                String query = "select * from " + tableName + " " + getSortStatement(orderByOption);
+                initializeStreamConnection(query);
+                this.streamResultSet = this.preparedStatement.executeQuery();
+            }
+            int count = 0;
+            while (this.streamResultSet.next()) {
+                ODataEntry entry = createDataEntryFromRS(tableName);
+                entitySet.add(entry);
+                count++;
+                if (count >= this.bufferSize) {
+                    break;
+                }
+            }
+            return entitySet;
+        } catch (SQLException e) {
+            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" + e.getMessage());
+        } finally {
+            try {
+                if (this.streamResultSet.isLast() || this.streamResultSet.isAfterLast()) {
+                    this.closeStreamConnection();
+                }
+            } catch (SQLException e) {
+                this.closeStreamConnection();
+                throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" + e.getMessage());
+            }
+        }
+
+
+    }
+
+    private ODataEntry createDataEntryFromRS(String tableName) throws SQLException {
+        ODataEntry entry = new ODataEntry();
+        //Creating a unique string to represent the
+        for (String column : this.rdbmsDataTypes.get(tableName).keySet()) {
+            int columnType = this.rdbmsDataTypes.get(tableName).get(column);
+            String paramValue = getValueFromResultSet(columnType, column, this.streamResultSet);
+            entry.addValue(column, paramValue);
+        }
+        //Set Etag to the entity
+        entry.addValue("ETag", ODataUtils.generateETag(this.configID, tableName, entry));
+        return entry;
+    }
+
+    /**
+     * This method creates the sort statement for the query
+     *
+     * @param orderByOption List of keys to consider when sorting
+     * @return Sort statement
+     */
+    private String getSortStatement(OrderByOption orderByOption) {
+        String orderBy = "order by ";
+
+        for (int i = 0; i < orderByOption.getOrders().size(); i++) {
+            if (i != 0) {
+                orderBy += ", ";
+            }
+            final OrderByItem item = orderByOption.getOrders().get(i);
+            String expression = String.valueOf(item.getExpression()).replaceAll("\\[", "(").replaceAll("\\]", ")").replaceAll("[\\{\\}]", "");
+            orderBy += expression;
+            if (item.isDescending()) {
+                orderBy += " desc";
+            } else {
+                orderBy += " asc";
+            }
+        }
+        return orderBy;
     }
 
     @Override
@@ -420,7 +598,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
             connection = initializeConnection();
             String query = createInsertSQL(tableName, entry);
             boolean isAvailableAutoIncrementColumns = isAvailableAutoIncrementColumns(tableName);
-            if(isAvailableAutoIncrementColumns) {
+            if (isAvailableAutoIncrementColumns) {
                 statement = connection.prepareStatement(query, Statement.RETURN_GENERATED_KEYS);
             } else {
                 statement = connection.prepareStatement(query);
@@ -429,8 +607,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
             for (String column : entry.getNames()) {
                 if (this.rdbmsDataTypes.get(tableName).keySet().contains(column)) {
                     String value = entry.getValue(column);
-                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index,
-                                                  statement);
+                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index, statement);
                     index++;
                 }
             }
@@ -461,8 +638,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
             createdEntry.addValue(ODataConstants.E_TAG, ODataUtils.generateETag(this.configID, tableName, entry));
             return createdEntry;
         } catch (SQLException | ParseException e) {
-            throw new ODataServiceFault(e, "Error occurred while writing entities to " + tableName + " table. :" +
-                                           e.getMessage());
+            throw new ODataServiceFault(e, "Error occurred while writing entities to " + tableName + " table. :" + e.getMessage());
         } finally {
             releaseResources(null, statement);
             releaseConnection(connection);
@@ -491,20 +667,67 @@ public class RDBMSDataHandler implements ODataDataHandler {
             for (String column : keys.getNames()) {
                 if (this.rdbmsDataTypes.get(tableName).keySet().contains(column)) {
                     String value = keys.getValue(column);
-                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index,
-                                                  statement);
+                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index, statement);
                     index++;
                 }
             }
             resultSet = statement.executeQuery();
             return createDataEntryCollectionFromRS(tableName, resultSet);
         } catch (SQLException | ParseException e) {
-            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" +
-                                           e.getMessage());
+            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" + e.getMessage());
         } finally {
             releaseResources(resultSet, statement);
             releaseConnection(connection);
         }
+    }
+
+    public List<ODataEntry> streamTableWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault {
+        List<ODataEntry> entitySet = new ArrayList<>();
+        try {
+            if (this.streamConnection == null) {
+
+                String query = createReadSqlWithKeys(tableName, keys);
+                initializeStreamConnection(query);
+
+                int index = 1;
+                for (String column : keys.getNames()) {
+                    if (this.rdbmsDataTypes.get(tableName).keySet().contains(column)) {
+                        String value = keys.getValue(column);
+                        bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index, this.preparedStatement);
+                        index++;
+                    }
+                }
+                this.streamResultSet = this.preparedStatement.executeQuery();
+            }
+            int count = 0;
+            while (this.streamResultSet.next()) {
+                ODataEntry entry = createDataEntryFromRS(tableName);
+                entitySet.add(entry);
+                count++;
+                if (count >= this.bufferSize) {
+                    break;
+                }
+            }
+            return entitySet;
+        } catch (SQLException | ParseException e) {
+            throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" + e.getMessage());
+        } finally {
+            try {
+                if (this.streamResultSet.isLast() || this.streamResultSet.isAfterLast()) {
+                    this.closeStreamConnection();
+                }
+            } catch (SQLException e) {
+                this.closeStreamConnection();
+                throw new ODataServiceFault(e, "Error occurred while reading entities from " + tableName + " table. :" + e.getMessage());
+            }
+        }
+
+    }
+
+    private void initializeStreamConnection(String query) throws SQLException {
+        this.streamConnection = initializeConnection();
+        this.preparedStatement = this.streamConnection.prepareStatement(query, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+        this.preparedStatement.setFetchSize(this.bufferSize);
     }
 
     /**
@@ -518,9 +741,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
      * @throws ParseException
      * @throws ODataServiceFault
      */
-    private void bindValuesToPreparedStatement(int type, String value, int ordinalPosition,
-                                               PreparedStatement sqlStatement)
-            throws SQLException, ParseException, ODataServiceFault {
+    private void bindValuesToPreparedStatement(int type, String value, int ordinalPosition, PreparedStatement sqlStatement) throws SQLException, ParseException, ODataServiceFault {
         byte[] data;
         try {
             switch (type) {
@@ -553,9 +774,9 @@ public class RDBMSDataHandler implements ODataDataHandler {
                     }
                     break;
                 case Types.VARCHAR:
-                /* fall through */
+                    /* fall through */
                 case Types.CHAR:
-				/* fall through */
+                    /* fall through */
                 case Types.LONGVARCHAR:
                     if (value == null) {
                         sqlStatement.setNull(ordinalPosition, type);
@@ -567,12 +788,11 @@ public class RDBMSDataHandler implements ODataDataHandler {
                     if (value == null) {
                         sqlStatement.setNull(ordinalPosition, type);
                     } else {
-                        sqlStatement.setClob(ordinalPosition, new BufferedReader(new StringReader(value)),
-                                             value.length());
+                        sqlStatement.setClob(ordinalPosition, new BufferedReader(new StringReader(value)), value.length());
                     }
                     break;
                 case Types.BOOLEAN:
-				/* fall through */
+                    /* fall through */
                 case Types.BIT:
                     if (value == null) {
                         sqlStatement.setNull(ordinalPosition, type);
@@ -581,7 +801,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
                     }
                     break;
                 case Types.BLOB:
-				/* fall through */
+                    /* fall through */
                 case Types.LONGVARBINARY:
                     if (value == null) {
                         sqlStatement.setNull(ordinalPosition, type);
@@ -591,7 +811,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
                     }
                     break;
                 case Types.BINARY:
-				/* fall through */
+                    /* fall through */
                 case Types.VARBINARY:
                     if (value == null) {
                         sqlStatement.setNull(ordinalPosition, type);
@@ -608,7 +828,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
                     }
                     break;
                 case Types.DECIMAL:
-				/* fall through */
+                    /* fall through */
                 case Types.NUMERIC:
                     if (value == null) {
                         sqlStatement.setNull(ordinalPosition, type);
@@ -617,7 +837,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
                     }
                     break;
                 case Types.FLOAT:
-				/* fall through */
+                    /* fall through */
                 case Types.REAL:
                     if (value == null) {
                         sqlStatement.setNull(ordinalPosition, type);
@@ -633,9 +853,9 @@ public class RDBMSDataHandler implements ODataDataHandler {
                     }
                     break;
                 case Types.LONGNVARCHAR:
-				/* fall through */
+                    /* fall through */
                 case Types.NCHAR:
-				/* fall through */
+                    /* fall through */
                 case Types.NVARCHAR:
                     if (value == null) {
                         sqlStatement.setNull(ordinalPosition, type);
@@ -647,8 +867,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
                     if (value == null) {
                         sqlStatement.setNull(ordinalPosition, type);
                     } else {
-                        sqlStatement.setNClob(ordinalPosition, new BufferedReader(new StringReader(value)),
-                                              value.length());
+                        sqlStatement.setNClob(ordinalPosition, new BufferedReader(new StringReader(value)), value.length());
                     }
                     break;
                 case Types.BIGINT:
@@ -700,8 +919,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
             for (String column : newProperties.getNames()) {
                 if (!pKeys.contains(column)) {
                     value = newProperties.getValue(column);
-                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index,
-                                                  statement);
+                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index, statement);
                     index++;
                 }
             }
@@ -709,29 +927,25 @@ public class RDBMSDataHandler implements ODataDataHandler {
                 if (!pKeys.isEmpty()) {
                     if (pKeys.contains(column)) {
                         value = newProperties.getValue(column);
-                        bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index,
-                                                      statement);
+                        bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index, statement);
                         index++;
                     }
                 } else {
-                    throw new ODataServiceFault("Error occurred while updating the entity to " + tableName +
-                                                " table. couldn't find keys in the table.");
+                    throw new ODataServiceFault("Error occurred while updating the entity to " + tableName + " table. couldn't find keys in the table.");
                 }
             }
             statement.execute();
             commitExecution(connection);
             return true;
         } catch (SQLException | ParseException e) {
-            throw new ODataServiceFault(e, "Error occurred while updating the entity to " + tableName + " table. :" +
-                                           e.getMessage());
+            throw new ODataServiceFault(e, "Error occurred while updating the entity to " + tableName + " table. :" + e.getMessage());
         } finally {
             releaseResources(null, statement);
             releaseConnection(connection);
         }
     }
 
-    public boolean updateEntityInTableTransactional(String tableName, ODataEntry oldProperties,
-                                                    ODataEntry newProperties) throws ODataServiceFault {
+    public boolean updateEntityInTableTransactional(String tableName, ODataEntry oldProperties, ODataEntry newProperties) throws ODataServiceFault {
         List<String> pKeys = this.primaryKeys.get(tableName);
         PreparedStatement statement = null;
         Connection connection = null;
@@ -744,8 +958,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
             for (String column : newProperties.getNames()) {
                 if (!pKeys.contains(column)) {
                     value = newProperties.getValue(column);
-                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index,
-                                                  statement);
+                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index, statement);
                     index++;
                 }
             }
@@ -753,21 +966,18 @@ public class RDBMSDataHandler implements ODataDataHandler {
                 if (!pKeys.isEmpty()) {
                     if (pKeys.contains(column)) {
                         value = oldProperties.getValue(column);
-                        bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index,
-                                                      statement);
+                        bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index, statement);
                         index++;
                     }
                 } else {
-                    throw new ODataServiceFault("Error occurred while updating the entity to " + tableName +
-                                                " table. couldn't find keys in the table.");
+                    throw new ODataServiceFault("Error occurred while updating the entity to " + tableName + " table. couldn't find keys in the table.");
                 }
             }
             statement.execute();
             commitExecution(connection);
             return true;
         } catch (SQLException | ParseException e) {
-            throw new ODataServiceFault(e, "Error occurred while updating the entity to " + tableName + " table. :" +
-                                           e.getMessage());
+            throw new ODataServiceFault(e, "Error occurred while updating the entity to " + tableName + " table. :" + e.getMessage());
         } finally {
             releaseResources(null, statement);
             releaseConnection(connection);
@@ -788,8 +998,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
             for (String column : pKeys) {
                 if (this.rdbmsDataTypes.get(tableName).keySet().contains(column)) {
                     value = entry.getValue(column);
-                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index,
-                                                  statement);
+                    bindValuesToPreparedStatement(this.rdbmsDataTypes.get(tableName).get(column), value, index, statement);
                     index++;
                 }
             }
@@ -798,8 +1007,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
             commitExecution(connection);
             return rowCount > 0;
         } catch (SQLException | ParseException e) {
-            throw new ODataServiceFault(e, "Error occurred while deleting the entity from " + tableName + " table. :" +
-                                           e.getMessage());
+            throw new ODataServiceFault(e, "Error occurred while deleting the entity from " + tableName + " table. :" + e.getMessage());
         } finally {
             releaseResources(null, statement);
             releaseConnection(connection);
@@ -824,8 +1032,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
      * @throws ODataServiceFault
      * @see DataEntry
      */
-    private List<ODataEntry> createDataEntryCollectionFromRS(String tableName, ResultSet resultSet)
-            throws ODataServiceFault {
+    private List<ODataEntry> createDataEntryCollectionFromRS(String tableName, ResultSet resultSet) throws ODataServiceFault {
         List<ODataEntry> entitySet = new ArrayList<>();
         try {
             String paramValue;
@@ -961,7 +1168,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
     }
 
     private void releaseResources(ResultSet resultSet, Statement statement) {
-	    /* close the result set */
+        /* close the result set */
         if (resultSet != null) {
             try {
                 resultSet.close();
@@ -969,7 +1176,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
                 // ignore
             }
         }
-		/* close the statement */
+        /* close the statement */
         if (statement != null) {
             try {
                 statement.close();
@@ -1009,8 +1216,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
      * @return table MetaData
      * @throws ODataServiceFault
      */
-    private Map<String, DataColumn> readTableColumnMetaData(String tableName, DatabaseMetaData meta)
-            throws ODataServiceFault {
+    private Map<String, DataColumn> readTableColumnMetaData(String tableName, DatabaseMetaData meta) throws ODataServiceFault {
         ResultSet resultSet = null;
         Map<String, DataColumn> columnMap = new HashMap<>();
         try {
@@ -1018,8 +1224,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
                 resultSet = meta.getColumns(null, meta.getUserName(), tableName, null);
                 if (meta.getConnection().getSchema() != null) {
                     if (!meta.getConnection().getSchema().equals(meta.getUserName())) {
-                        resultSet = meta.getColumns(null, meta.getConnection().getSchema(), tableName,
-                                null);
+                        resultSet = meta.getColumns(null, meta.getConnection().getSchema(), tableName, null);
                     }
                 }
             } else {
@@ -1037,13 +1242,11 @@ public class RDBMSDataHandler implements ODataDataHandler {
                 if (autoIncrement.contains("yes") || autoIncrement.contains("true")) {
                     isAutoIncrement = true;
                 }
-                DataColumn column = new DataColumn(columnName, getODataDataType(columnType), i, nullable, size,
-                                                   isAutoIncrement);
+                DataColumn column = new DataColumn(columnName, getODataDataType(columnType), i, nullable, size, isAutoIncrement);
                 if (null != columnDefaultVal) {
                     column.setDefaultValue(columnDefaultVal);
                 }
-                if (Types.DOUBLE == columnType || Types.FLOAT == columnType || Types.DECIMAL == columnType ||
-                    Types.NUMERIC == columnType || Types.REAL == columnType) {
+                if (Types.DOUBLE == columnType || Types.FLOAT == columnType || Types.DECIMAL == columnType || Types.NUMERIC == columnType || Types.REAL == columnType) {
                     int scale = resultSet.getInt("DECIMAL_DIGITS");
                     column.setPrecision(size);
                     if (scale == 0) {
@@ -1060,8 +1263,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
             }
             return columnMap;
         } catch (SQLException e) {
-            throw new ODataServiceFault(e, "Error in reading table meta data in " + tableName + " table. :" +
-                                           e.getMessage());
+            throw new ODataServiceFault(e, "Error in reading table meta data in " + tableName + " table. :" + e.getMessage());
         } finally {
             releaseResources(resultSet, null);
         }
@@ -1107,26 +1309,24 @@ public class RDBMSDataHandler implements ODataDataHandler {
             connection = initializeConnection();
             DatabaseMetaData meta = connection.getMetaData();
             if (meta.getDatabaseProductName().toLowerCase().contains(ORACLE_SERVER)) {
-                rs = meta.getTables(null, meta.getUserName(), null, new String[] { TABLE, VIEW });
+                rs = meta.getTables(null, meta.getUserName(), null, new String[]{TABLE, VIEW});
             } else if (meta.getDatabaseProductName().toLowerCase().contains(MSSQL_SERVER)) {
-                rs = meta.getTables(null, connection.getSchema(), null, new String[] { TABLE, VIEW });
+                rs = meta.getTables(null, connection.getSchema(), null, new String[]{TABLE, VIEW});
             } else {
-                rs = meta.getTables(null, null, null, new String[] { TABLE, VIEW });
+                rs = meta.getTables(null, null, null, new String[]{TABLE, VIEW});
             }
             while (rs.next()) {
                 String tableName = rs.getString(TABLE_NAME);
                 tableList.add(tableName);
             }
-          
-                if (meta.getDatabaseProductName().toLowerCase().contains(ORACLE_SERVER) && connection.getSchema() != null
-                        && !connection.getSchema().equals(meta.getUserName())) {
-                    rs = meta.getTables(null, connection.getSchema(), null,
-                            new String[]{TABLE, VIEW});
-                    while (rs.next()) {
-                        String tableName = rs.getString(TABLE_NAME);
-                        tableList.add(tableName);
-                    }
+
+            if (meta.getDatabaseProductName().toLowerCase().contains(ORACLE_SERVER) && connection.getSchema() != null && !connection.getSchema().equals(meta.getUserName())) {
+                rs = meta.getTables(null, connection.getSchema(), null, new String[]{TABLE, VIEW});
+                while (rs.next()) {
+                    String tableName = rs.getString(TABLE_NAME);
+                    tableList.add(tableName);
                 }
+            }
             return tableList;
         } catch (SQLException e) {
             throw new ODataServiceFault(e, "Error in reading tables from the database. :" + e.getMessage());
@@ -1143,8 +1343,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
      * @return primary key list
      * @throws ODataServiceFault
      */
-    private List<String> readTablePrimaryKeys(String tableName, DatabaseMetaData metaData, String catalog)
-            throws ODataServiceFault {
+    private List<String> readTablePrimaryKeys(String tableName, DatabaseMetaData metaData, String catalog) throws ODataServiceFault {
         ResultSet resultSet = null;
         List<String> keys = new ArrayList<>();
         try {
@@ -1159,8 +1358,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
             }
             return keys;
         } catch (SQLException e) {
-            throw new ODataServiceFault(e, "Error in reading table primary keys in " + tableName + " table. :" +
-                                           e.getMessage());
+            throw new ODataServiceFault(e, "Error in reading table primary keys in " + tableName + " table. :" + e.getMessage());
         } finally {
             releaseResources(resultSet, null);
         }
@@ -1172,8 +1370,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
      * @param tableName Name of the table
      * @throws ODataServiceFault
      */
-    private NavigationTable readForeignKeys(String tableName, DatabaseMetaData metaData, String catalog)
-            throws ODataServiceFault {
+    private NavigationTable readForeignKeys(String tableName, DatabaseMetaData metaData, String catalog) throws ODataServiceFault {
         ResultSet resultSet = null;
         try {
             resultSet = metaData.getExportedKeys(catalog, null, tableName);
@@ -1295,6 +1492,29 @@ public class RDBMSDataHandler implements ODataDataHandler {
     }
 
     /**
+     * This method creates SQL query to count the table with keys.
+     *
+     * @param tableName Name of the table
+     * @param keys      Keys
+     * @return sql Query
+     */
+    private String createCountSqlWithKeys(String tableName, ODataEntry keys) {
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT count(*) FROM ").append(tableName).append(" WHERE ");
+        boolean propertyMatch = false;
+        for (String column : this.rdbmsDataTypes.get(tableName).keySet()) {
+            if (keys.getNames().contains(column)) {
+                if (propertyMatch) {
+                    sql.append(" AND ");
+                }
+                sql.append(column).append(" = ").append(" ? ");
+                propertyMatch = true;
+            }
+        }
+        return sql.toString();
+    }
+
+    /**
      * This method creates SQL query to delete data.
      *
      * @param tableName Name of the table
@@ -1322,7 +1542,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
                 dataType = ODataDataType.INT32;
                 break;
             case Types.TINYINT:
-				/* fall through */
+                /* fall through */
             case Types.SMALLINT:
                 dataType = ODataDataType.INT16;
                 break;
@@ -1330,35 +1550,35 @@ public class RDBMSDataHandler implements ODataDataHandler {
                 dataType = ODataDataType.DOUBLE;
                 break;
             case Types.VARCHAR:
-				/* fall through */
+                /* fall through */
             case Types.CHAR:
-				/* fall through */
+                /* fall through */
             case Types.LONGVARCHAR:
-				/* fall through */
+                /* fall through */
             case Types.CLOB:
-				/* fall through */
+                /* fall through */
             case Types.LONGNVARCHAR:
-				/* fall through */
+                /* fall through */
             case Types.NCHAR:
-				/* fall through */
+                /* fall through */
             case Types.NVARCHAR:
-				/* fall through */
+                /* fall through */
             case Types.NCLOB:
-				/* fall through */
+                /* fall through */
             case Types.SQLXML:
                 dataType = ODataDataType.STRING;
                 break;
             case Types.BOOLEAN:
-				/* fall through */
+                /* fall through */
             case Types.BIT:
                 dataType = ODataDataType.BOOLEAN;
                 break;
             case Types.BLOB:
-				/* fall through */
+                /* fall through */
             case Types.BINARY:
-				/* fall through */
+                /* fall through */
             case Types.LONGVARBINARY:
-				/* fall through */
+                /* fall through */
             case Types.VARBINARY:
                 dataType = ODataDataType.BINARY;
                 break;
@@ -1366,12 +1586,12 @@ public class RDBMSDataHandler implements ODataDataHandler {
                 dataType = ODataDataType.DATE;
                 break;
             case Types.DECIMAL:
-				/* fall through */
+                /* fall through */
             case Types.NUMERIC:
                 dataType = ODataDataType.DECIMAL;
                 break;
             case Types.FLOAT:
-				/* fall through */
+                /* fall through */
             case Types.REAL:
                 dataType = ODataDataType.SINGLE;
                 break;
@@ -1408,7 +1628,7 @@ public class RDBMSDataHandler implements ODataDataHandler {
 
     private void releaseConnection(Connection connection) {
         if (getTransactionalConnection() == null) {
-			/* close the connection */
+            /* close the connection */
             try {
                 connection.close();
             } catch (Exception ignore) {

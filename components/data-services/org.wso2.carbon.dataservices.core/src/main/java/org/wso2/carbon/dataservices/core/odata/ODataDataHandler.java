@@ -18,6 +18,7 @@
 
 package org.wso2.carbon.dataservices.core.odata;
 
+import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
 import org.wso2.carbon.dataservices.core.engine.DataEntry;
 
 import java.util.List;
@@ -86,8 +87,7 @@ public interface ODataDataHandler {
      * @param newProperties New Properties
      * @throws ODataServiceFault
      */
-    boolean updateEntityInTableTransactional(String tableName, ODataEntry oldProperties, ODataEntry newProperties)
-            throws ODataServiceFault;
+    boolean updateEntityInTableTransactional(String tableName, ODataEntry oldProperties, ODataEntry newProperties) throws ODataServiceFault;
 
     /**
      * This method return database table metadata.
@@ -151,8 +151,7 @@ public interface ODataDataHandler {
      * @param navigationTableKeys Navigation - Entity Name (Primary Keys)
      * @throws ODataServiceFault
      */
-    void updateReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable,
-                         ODataEntry navigationTableKeys) throws ODataServiceFault;
+    void updateReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable, ODataEntry navigationTableKeys) throws ODataServiceFault;
 
     /**
      * This method deletes the references of the table where the keys were imported.
@@ -163,6 +162,74 @@ public interface ODataDataHandler {
      * @param navigationTableKeys Navigation - Entity Name (Primary Keys)
      * @throws ODataServiceFault
      */
-    void deleteReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable,
-                         ODataEntry navigationTableKeys) throws ODataServiceFault;
+    void deleteReference(String rootTableName, ODataEntry rootTableKeys, String navigationTable, ODataEntry navigationTableKeys) throws ODataServiceFault;
+
+    /**
+     * This method sets the maximum number of entities that application retrieves
+     * from the database for a single read iteration
+     * <p>
+     * This will initialize the buffer size; the number of entities the application
+     * keep in memory.
+     */
+    void setBufferSize();
+
+    /**
+     * This method reads the table to the buffer.
+     * Return a list of ODataEntry objects.
+     *
+     * @param tableName Name of the table
+     * @return List of rows
+     * @throws ODataServiceFault
+     * @see ODataEntry
+     */
+    List<ODataEntry> streamTable(String tableName) throws ODataServiceFault;
+
+    /**
+     * This method reads the table with keys to the buffer.
+     * Return a list of ODataEntry objects.
+     *
+     * @param tableName Name of the table
+     * @param keys      keys to check
+     * @return List of rows
+     * @throws ODataServiceFault
+     * @see ODataEntry
+     */
+    List<ODataEntry> streamTableWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault;
+
+    /**
+     * This method reads a sorted table to the buffer.
+     * Return a list of ODataEntry objects.
+     *
+     * @param tableName     Name of the table
+     * @param orderByOption List of keys to consider when sorting
+     * @return List of rows
+     * @throws ODataServiceFault
+     * @see ODataEntry
+     */
+    List<ODataEntry> StreamTableWithOrder(String tableName, OrderByOption orderByOption) throws ODataServiceFault;
+
+    /**
+     * This method returns the number of entities in a table.
+     *
+     * @param tableName Name of the table
+     * @return Number of rows in the table
+     * @throws ODataServiceFault
+     */
+    int getEntityCount(String tableName) throws ODataServiceFault;
+
+    /**
+     * This method returns the number of entities in a table after querying.
+     *
+     * @param tableName Name of the table
+     * @param keys      keys to check
+     * @return Number of rows in the table
+     * @throws ODataServiceFault
+     */
+    int getEntityCountWithKeys(String tableName, ODataEntry keys) throws ODataServiceFault;
+
+    /**
+     * This initializes the ODataHandlers for streaming
+     */
+    void initStreaming();
+
 }
